@@ -1,0 +1,83 @@
+@startuml
+!theme plain
+title generate_code() — Auto Numbering Surat\nmailmodel.php:1564-1615
+
+start
+
+if (m_no sudah terisi?) then (yes)
+  :Return m_no yang sudah ada;
+  note right
+    Jika user mengisi nomor manual,
+    skip auto-generate
+  end note
+  stop
+else (no)
+endif
+
+partition "Resolve CLIENT_CODE Config" #LightBlue {
+  if (CLIENT_CODE?) then (BMS)
+    :ref_code = "m_number_format_bms";
+    :Type mapping:
+    1→I (Internal)
+    2→M (Memo)
+    3→E (Eksternal);
+  elseif (SMD) then
+    :ref_code = "m_number_format_smd";
+    :Type mapping:
+    1→I (Internal)
+    2→M (Memo)
+    3→E (Eksternal);
+    note right
+      ⚠️ Bug: code uses "if" bukan "else if"
+      sehingga SMD selalu di-override oleh
+      blok BPN/default. Perlu fix di migrasi.
+    end note
+  elseif (BPN) then
+    :ref_code = "m_number_format_blp";
+    :Type mapping:
+    1→I (Internal)
+    2→M (Memo)
+    3→K (Keluar);
+  else (default)
+    :ref_code = "m_number_format_blp";
+    :Type mapping:
+    1→I, 2→M, 3→K;
+  endif
+}
+
+partition "Load & Build Template" #LightBlue {
+  :Load no_template dari
+  **sys_reference** WHERE code=ref_code;
+
+  :Replace placeholders:
+  - #org_code# → userdata.mail_code
+  - #type# → mt (I/M/E/K)
+  - #MR# → Bulan Romawi (get_month_r)
+  - #YYYY# → Tahun sekarang
+  - #m_cat# → mcat_code dari kategori;
+}
+
+partition "Generate Sequence" #LightBlue {
+  :prefix_sequence = mail_code + "-"
+  + m_category_code + "-" + YYYY;
+
+  :sequence = get_trans_sequence(
+    TASK_MAIL, prefix_sequence, 3);
+  note right
+    Auto-increment per prefix.
+    Padding 3 digit: 001, 002, ...
+    Tabel: sys_trans_sequence
+  end note
+
+  :Replace #seq# → sequence di template;
+}
+
+:Return kode surat final;
+note right
+  Contoh output:
+  001/1421002/01-I/III/2026-000
+end note
+
+stop
+
+@enduml

@@ -1,0 +1,73 @@
+@startuml
+!theme plain
+title create_archive_mail_notif() — Notifikasi Hak Akses Arsip\nmailmodel.php:1617-1711
+
+participant "Caller\n(Archive Module)" as Caller
+participant "MailModel" as Model
+database "Database" as DB
+
+Caller -> Model : create_archive_mail_notif(user, archive)
+note right
+  Berbeda dari notif lain:
+  - Recipient sudah resolved (user object)
+  - Tidak perlu query employee
+  - Template replace: archive fields
+end note
+
+== Step 1: Resolve CLIENT_CODE Config ==
+
+group CLIENT_CODE Branching
+  alt BMS
+    Model -> Model : m_type=1, m_category=1 (UMUM)\nm_category_code="000"\nref_code="m_number_format_bms"
+  else SMD
+    Model -> Model : idem, ref_code="m_number_format_smd"
+  else BPN
+    Model -> Model : m_type=1, m_category=3 (PENGUMUMAN)\nm_category_code="C"\nref_code="m_number_format_blp"
+    note right
+      BPN berbeda: category=3,
+      code="C" (bukan "000")
+    end note
+  end
+  Model -> Model : user_id=2 (Administrator)
+end
+
+== Step 2: Generate Nomor Surat ==
+
+Model -> DB : SELECT text FROM sys_reference\nWHERE code=ref_code
+DB --> Model : no_template
+Model -> Model : Replace placeholders\norg_code="00", type="I"
+Model -> DB : get_trans_sequence(\nTASK_MAIL, "00-"+m_category_code, 3)
+DB --> Model : sequence
+Model -> Model : → kode surat final
+
+== Step 3: Load & Fill Template ==
+
+Model -> DB : SELECT message FROM msg_template\nWHERE template_id=3
+DB --> Model : template
+
+Model -> Model : Replace dalam template:\n#ma_no# → archive.ma_no\n#ma_subject# → archive.ma_subject\n#ma_archive_by_name# → archive.ma_archive_by_name\n#ma_secret_type# → archive.ma_secret_type
+
+== Step 4: Insert Mail ==
+
+Model -> DB : INSERT mail\n(m_subject="Pemberitahuan Hak Akses\nDokumen Arsip",\nm_to_str=user.emp_name + " (" +\nuser.pos_name + ")",\nm_status=SENT, ...)
+DB --> Model : mail_id
+
+Model -> DB : UPDATE mail SET\nm_root_id=mail_id, m_parent_id=0
+
+== Step 5: Sent Item (Admin) ==
+
+Model -> DB : INSERT sys_user_task\n(user_id=2, folder_id=SENT)
+
+== Step 6: Inbox — Single Recipient ==
+
+note over Model
+  Tidak perlu query employee.
+  User object sudah lengkap dari caller
+  (via get_allowed_user di archive module)
+end note
+
+Model -> DB : INSERT mail_recipient\n(user_id, emp_id, emp_name,\npos_id, pos_name, circulation=4)
+
+Model -> DB : INSERT sys_user_task\n(user_id, folder_id=INBOX,\nread_status=UNREAD)
+
+@enduml

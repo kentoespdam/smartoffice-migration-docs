@@ -1,0 +1,112 @@
+@startuml
+!theme plain
+title generate_code() — Auto Numbering Arsip Surat\nmailarchivemodel.php:435-551
+
+start
+
+if (CLIENT_CODE?) then (BMS)
+
+  partition "BMS — Banyumas" #LightBlue {
+    :ref_code = "ma_number_format_bms";
+    :Load template dari sys_reference;
+    :Load mail_code dari organization;
+    :Replace #org_code# → mail_code;
+
+    :Type mapping:
+    1→"I/" (Internal)
+    2→"M/" (Memo)
+    3→"" (Eksternal, tanpa prefix);
+
+    if (office_code == "PUSAT"\natau "ALL"?) then (PUSAT)
+      :m_cat = ma_mcat_code;
+      :prefix_sequence = type + YYYY;
+    else (CABANG)
+      :m_cat = ma_mcat_code + "-" + office_code;
+      :prefix_sequence = office_code + "/" + type + YYYY;
+      note right
+        Cabang punya prefix terpisah
+        agar sequence numbering
+        independen per cabang
+      end note
+    endif
+
+    :Replace #type#, #MR#, #YYYY#, #m_cat#;
+    :sequence = get_trans_sequence(
+    TASK_MAIL_ARCHIVE, prefix_sequence, **4**);
+    note right
+      Padding 4 digit (0001, 0002...)
+      berbeda dengan mail yang 3 digit
+    end note
+    :Replace #seq# → sequence;
+  }
+
+elseif (SMD) then
+
+  partition "SMD — Samarinda" #LightBlue {
+    :ref_code = "ma_number_format_smd";
+    note right
+      Logic identik dengan BMS
+      hanya beda ref_code template
+    end note
+    :Load template + mail_code;
+    :Type mapping: 1→"I/", 2→"M/", 3→"";
+
+    if (office_code == "PUSAT"/"ALL"?) then (PUSAT)
+      :m_cat = ma_mcat_code;
+      :prefix_sequence = type + YYYY;
+    else (CABANG)
+      :m_cat = ma_mcat_code + "-" + office_code;
+      :prefix_sequence = office_code + "/" + type + YYYY;
+    endif
+
+    :Replace placeholders;
+    :sequence = get_trans_sequence(
+    TASK_MAIL_ARCHIVE, prefix_sequence, **4**);
+    :Replace #seq#;
+  }
+
+elseif (BPN) then
+
+  partition "BPN — Balikpapan" #LightBlue {
+    :ref_code = "ma_number_format_blp";
+    :Load template + mail_code;
+    :Replace #org_code# → mail_code;
+
+    :Type mapping (tanpa slash):
+    1→"I" (Internal)
+    2→"M" (Memo)
+    3→"K" (Keluar);
+    note right
+      BPN: tanpa office branching.
+      Tidak ada PUSAT vs cabang.
+    end note
+
+    :Replace #type#, #MR#, #YYYY#, #m_cat#;
+    :prefix_sequence = type + "-"
+    + ma_mcat_code + YYYY;
+    :sequence = get_trans_sequence(
+    TASK_MAIL_ARCHIVE, prefix_sequence, **3**);
+    :Replace #seq#;
+  }
+
+else (default)
+
+  partition "Default" #LightBlue {
+    :ref_code = "ma_number_format_blp";
+    :Type mapping: 1→"I", 2→"M", 3→"E";
+    note right
+      Default berbeda dari BPN:
+      type 3 = "E" (bukan "K")
+    end note
+    :Logic sama seperti BPN
+    (tanpa office branching);
+    :sequence padding = **3** digit;
+  }
+
+endif
+
+:Return kode arsip final;
+
+stop
+
+@enduml

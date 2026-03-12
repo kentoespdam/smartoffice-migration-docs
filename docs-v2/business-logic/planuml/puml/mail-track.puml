@@ -1,0 +1,82 @@
+@startuml
+!theme plain
+title trackMail() / track_mail() — Pelacakan Sirkulasi Surat\ndirect/mail.php:286 + mailmodel.php:1174-1217
+
+start
+
+:Input: root_id, ref_code;
+
+:Resolve Root ID;
+
+if (ref_code == "mail"?) then (yes)
+  :root_id = input.root_id;
+  note right
+    Caller sudah tahu root_id
+    (dari mail context)
+  end note
+else (no, dari context lain)
+  partition "Lookup Root" #LightBlue {
+    :SELECT m_root_id FROM mail
+    WHERE m_id = input.root_id;
+    :root_id = result.m_root_id;
+    note right
+      Input mungkin ID surat child.
+      Perlu resolve ke root thread.
+    end note
+  }
+endif
+
+:Query All Mails in Thread;
+
+partition "Get Thread Mails" #LightBlue {
+  :build_where_condition(in, field_alias);
+
+  :SELECT m.*, mc.mcat_code, mc.mcat_name,
+  mt.mail_type (as m_type_desc),
+  date_format(m_created_date) (formatted)
+  FROM mail m
+  JOIN mail_category mc
+  LEFT JOIN mail_type mt
+  WHERE m.m_root_id = root_id
+  AND m.m_status > 0;
+  note right
+    status > 0 = hanya surat yang sudah SENT.
+    Draft (status=0) tidak ditampilkan.
+  end note
+}
+
+partition "Sort" #LightBlue {
+  if (custom sort?) then (yes)
+    :Apply sort dari grid;
+  else (no)
+    :ORDER BY m_created_date ASC;
+    note right
+      Chronological order:
+      surat pertama di atas
+    end note
+  endif
+}
+
+:Post-Process;
+
+partition "Trim Content" {
+  while (untuk setiap mail) is (next)
+    :trim_msg(m_content);
+    note right
+      Potong content untuk preview.
+      Hapus HTML berlebihan.
+    end note
+  endwhile (done)
+}
+
+:Return data (flat list,
+chronological order);
+note right
+  Frontend yang menampilkan
+  sebagai tree/timeline.
+  Backend return flat list.
+end note
+
+stop
+
+@enduml

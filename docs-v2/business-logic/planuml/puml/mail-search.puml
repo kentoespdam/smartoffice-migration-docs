@@ -1,0 +1,90 @@
+@startuml
+!theme plain
+title find() / find_mail() — Pencarian Surat\ndirect/mail.php:294 + mailmodel.php:1219-1266
+
+start
+
+:Input dari controller:\nfind(input) → find_mail((array)input);
+
+:Build Query;
+
+partition "Base Query" #LightBlue {
+  :SELECT m_id, m_no, m_date,\nm_created_by_name, m_subject\nFROM mail m;
+
+  :WHERE m_status = 1 (SENT);
+
+  :WHERE m.m_id = m.m_root_id;
+  note right
+    Hanya tampilkan root mail
+    (thread utama, bukan reply).
+    Ini memastikan search result
+    tidak duplikat per thread.
+  end note
+}
+
+partition "Keyword Filter" #LightBlue {
+  if (keyword terisi\nDAN bukan "%" ?) then (yes)
+    :WHERE LIKE keyword di:\n- m_no (nomor surat)\n- m_subject (perihal)\n- m_content (isi surat)\n- m_note (catatan)\n- m_created_by_name (pengirim);
+  else (no)
+  endif
+}
+
+partition "Type & Category Filter" #LightBlue {
+  if (m_mcat_type terisi?) then (yes)
+    :WHERE m_type = m_mcat_type;
+  else (no)
+  endif
+
+  if (m_mcat_id terisi?) then (yes)
+    :WHERE m_category = m_mcat_id;
+  else (no)
+  endif
+}
+
+partition "Special Flag Filter" #LightBlue {
+  if (flag == "rab"?) then (yes)
+    :WHERE m_rab_id IS NULL;
+    note right
+      Surat yang belum di-link ke RAB
+    end note
+  else (no)
+  endif
+
+  if (flag == "mail_archive"?) then (yes)
+    :WHERE m_ma_id IS NULL;
+    note right
+      Surat yang belum di-arsip.
+      Digunakan oleh form arsip
+      untuk pilih referensi surat.
+    end note
+  else (no)
+  endif
+}
+
+partition "Sort & Execute" #LightBlue {
+  if (custom sort?) then (yes)
+    :Apply sort dari grid;
+  else (no)
+    :ORDER BY m_created_date ASC;
+  endif
+
+  :Execute query (tanpa pagination);
+  note right
+    ⚠️ Tidak ada LIMIT/OFFSET.
+    Search ini return semua hasil.
+    Di Spring Boot: tambahkan
+    pagination default.
+  end note
+}
+
+:Return success + data + total_row;
+
+stop
+
+legend right
+**search_mail() (mailmodel.php:1713)** adalah fungsi search TERPISAH
+yang tidak dipanggil oleh controller `find()`.
+Fungsi itu digunakan oleh archive search.
+endlegend
+
+@enduml

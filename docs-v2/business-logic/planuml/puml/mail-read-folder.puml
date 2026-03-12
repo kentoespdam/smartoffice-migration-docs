@@ -1,0 +1,120 @@
+@startuml
+!theme plain
+title readFolder() — Baca Surat per Folder\ndirect/mail.php:49-69 + mailmodel.php:83-201
+
+start
+
+:Controller: Parameter Extraction (direct/mail.php:49-69);
+
+:Extract parameters dari input:\n- start, limit (pagination)\n- sort, filter (ExtJS grid)\n- folder_id\n- threaded (true/false)\n- sdate, edate (date range)\n- keyword (search);
+
+:Call model.read_folder(params);
+
+:Model: Query Building (mailmodel.php:83-201);
+
+partition "Build WHERE Conditions" #LightBlue {
+  :build_where_condition(in, field_alias);
+  note right
+    Helper CI untuk parsing
+    ExtJS sort/filter format
+  end note
+
+  :Base JOIN:\nsys_user_task ut\n→ mail m\n→ mail_category mc (left)\n→ mail_type mt (left)\n→ sys_user u (left);
+
+  :WHERE ut.user_id = current_user\nAND ut.folder_id = folder_id;
+}
+
+partition "Folder-Specific JOINs" #LightBlue {
+  if (folder == INBOX / READ /\nDELETED / PERSONAL?) then (yes)
+    :JOIN tambahan:\n- mail_recipient mr (user_id match)\n- sys_reference sirkulasi;
+    note right
+      Ambil tipe sirkulasi
+      (tembusan, disposisi, dll)
+      hanya untuk folder inbox
+    end note
+  else (no)
+  endif
+
+  if (folder == DELETED?) then (yes)
+    :JOIN mail_folder mf\nuntuk restore_folder_name;
+    note right
+      Tampilkan nama folder asal
+      agar user tahu mau restore ke mana
+    end note
+  else (no)
+  endif
+}
+
+partition "Date & Keyword Filter" #LightBlue {
+  if (sdate & edate terisi?) then (yes)
+    :WHERE m_date BETWEEN sdate AND edate\nOR read_status = UNREAD;
+    note right
+      Surat unread selalu tampil
+      meskipun di luar range tanggal
+    end note
+  else (no)
+  endif
+
+  if (keyword terisi?) then (yes)
+    :WHERE LIKE keyword di:\nm_created_by_name, m_subject, m_no,\nm_to_str, m_content, m_note,\nmcat_name, mail_type;
+  else (no)
+  endif
+}
+
+partition "Count Total Rows" #LightBlue {
+  :SELECT COUNT(1) dengan semua\nkondisi di atas;
+}
+
+partition "Sort Logic" #LightBlue {
+  if (custom sort dari grid?) then (yes)
+    :Apply sort sesuai grid;
+    if (sort by m_id AND\n(BMS atau SMD) AND\nfolder == INBOX?) then (yes)
+      :Force ORDER BY m_id ASC;
+      note right
+        CR 13 Maret: BMS & SMD
+        mau FIFO di inbox
+      end note
+    else (no)
+      :Normal sort direction;
+    endif
+  else (no, default sort)
+    if (CLIENT_CODE == BMS/SMD\nAND folder == INBOX?) then (yes)
+      :ORDER BY m_created_date ASC;
+    else (no)
+      :ORDER BY m_created_date DESC;
+    endif
+  endif
+}
+
+partition "Execute Query + Pagination" #LightBlue {
+  :SELECT m.*, mc.*, mt.*, ut.read_status\nLIMIT count OFFSET start;
+}
+
+partition "Keyword Highlighting" #LightBlue {
+  if (keyword terisi?) then (yes)
+    :Loop setiap row → setiap field:\nmarkMe(value, [keyword]);
+    note right
+      Wrap matched text dengan
+      <span style="background-color:#F9E79F">
+      untuk highlight di frontend
+    end note
+  else (no)
+  endif
+}
+
+:Controller: Threading Decision (direct/mail.php:63-68);
+
+if (threaded == true?) then (yes)
+  :make_nlevel_threaded(data);
+  note right
+    Lihat diagram:
+    **mail-threading.puml**
+  end note
+  :Return tree format\n(children nested);
+else (no)
+  :Return flat array\n(data + total_row);
+endif
+
+stop
+
+@enduml

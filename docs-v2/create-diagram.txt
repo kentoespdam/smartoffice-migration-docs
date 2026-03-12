@@ -1,0 +1,7 @@
+objective: migrasi dari php RPC ke java Springboot Rest API 
+Task: explore logic in function
+Scope: fokus gambaran logika setiap function Modul Mail (what & why) bukan implementasi kode (how)  
+Action: buat flowchart dengan planuml logic per modul per markdown kedalam folder docs-v2/business-logic/planuml
+Data: MariaDB (192.168.230.84:3307, user:dev, pass:password); Rest Api Kepegawaian http://192.168.1.183:8088/api-docs
+controllers: server/application/direct/mail*.php
+models: server/application/models/mail*.php

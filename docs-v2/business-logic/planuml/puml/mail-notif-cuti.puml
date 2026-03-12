@@ -1,0 +1,67 @@
+@startuml
+!theme plain
+title create_approval_cuti_notif() — Notifikasi Approval Cuti\nmailmodel.php:572-675
+
+participant "Caller\n(Cuti Module)" as Caller
+participant "MailModel" as Model
+database "Database" as DB
+
+Caller -> Model : create_approval_cuti_notif(\nemp, detail, subject, msg_tpl)
+note right
+  Berbeda dari notif lain:
+  - subject dan msg_tpl di-pass dari caller
+  - detail sudah berupa HTML string
+end note
+
+== Step 1: Resolve CLIENT_CODE Config ==
+
+group CLIENT_CODE Branching
+  alt BMS
+    Model -> Model : m_type=1, m_category=1 (UMUM)\nm_category_code="000"\nref_code="m_number_format_bms"
+  else SMD
+    Model -> Model : idem, ref_code="m_number_format_smd"
+  else BPN
+    Model -> Model : idem, ref_code="m_number_format_blp"
+  end
+  Model -> Model : user_id=2 (Administrator)
+end
+
+== Step 2: Generate Nomor Surat ==
+
+Model -> DB : SELECT text FROM sys_reference\nWHERE code=ref_code
+DB --> Model : no_template
+Model -> Model : Replace placeholders + get_trans_sequence
+Model -> Model : → kode surat final
+
+== Step 3: Load & Fill Template ==
+
+Model -> DB : SELECT message FROM msg_template\nWHERE template_id=msg_tpl
+note right
+  msg_tpl di-pass dari caller,
+  bukan hardcoded seperti notif lain
+end note
+DB --> Model : template
+Model -> Model : Replace #detail# → detail HTML
+
+== Step 4: Insert Mail ==
+
+Model -> DB : INSERT mail\n(m_subject=subject (dari caller),\nm_to_str=emp.emp_name,\nm_status=SENT, ...)
+DB --> Model : mail_id
+
+Model -> DB : UPDATE mail SET\nm_root_id=mail_id, m_parent_id=0
+
+== Step 5: Sent Item (Admin) ==
+
+Model -> DB : INSERT sys_user_task\n(user_id=2, folder_id=SENT)
+
+== Step 6: Inbox untuk Karyawan ==
+
+Model -> DB : SELECT * FROM sys_user u\nJOIN employee e ...\nWHERE emp_id=emp.emp_id
+DB --> Model : target user
+
+loop untuk setiap user
+  Model -> DB : INSERT mail_recipient\n(circulation=4)
+  Model -> DB : INSERT sys_user_task\n(folder_id=INBOX, read_status=UNREAD)
+end
+
+@enduml

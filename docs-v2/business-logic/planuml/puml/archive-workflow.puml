@@ -1,0 +1,158 @@
+@startuml
+!theme plain
+title archive() + create() + update() — Archive Workflow\nmailarchivemodel.php:263-399
+
+start
+
+note right
+  Entry points:
+  - Controller save() → create() atau update()
+  - Controller archive() → finalize archive
+  - Controller del() → soft delete
+end note
+
+if (Action?) then (save - baru)
+
+  == create() — mailarchivemodel.php:263-319 ==
+
+  partition "Validasi Organisasi" #LightBlue {
+    :Query mail_code FROM organization
+    WHERE org_id = ma_org_id;
+
+    if (organization tidak ditemukan?) then (yes)
+      #Pink:Return ERROR:
+      "Unit Kerja tidak dikenal";
+      stop
+    else (no)
+    endif
+  }
+
+  partition "Resolve Category Code" #LightBlue {
+    if (ma_mcat_code kosong?) then (yes)
+      :Query mcat_code FROM mail_category
+      WHERE mcat_id = ma_mcat_id;
+    else (no)
+    endif
+  }
+
+  :generate_code(input);
+  note right
+    Lihat diagram:
+    **archive-generate-code.puml**
+  end note
+
+  partition "Insert Archive" #LightBlue {
+    :INSERT mail_archive:
+    - ma_no = generated code
+    - ma_mail_date, ma_mcat_type, ma_mcat_code
+    - ma_mcat_id, ma_org_code, ma_org_id
+    - ma_ref_id, ma_ref_no
+    - ma_sent_to, ma_subject, ma_content, ma_note
+    - ma_status (dari input)
+    - ma_secret_type
+    - ma_loc_* (building, floor, room, rack, tier, box)
+    - ma_keyword, ma_keyword_index_flag=0
+    - ma_archive_date=now()
+    - ma_archive_by_name=user
+    - office_code;
+    :id = insert_id();
+  }
+
+  partition "Update Mail Reference" #LightBlue {
+    if (ma_ref_id != 0?) then (yes)
+      :UPDATE mail SET m_ma_id = archive_id
+      WHERE m_id = ma_ref_id;
+      note right
+        Link surat ke arsip.
+        Surat yang sudah di-link
+        tidak bisa di-arsip lagi.
+      end note
+    else (no)
+    endif
+  }
+
+  :Return success + id + code;
+
+elseif (save - existing) then
+
+  == update() — mailarchivemodel.php:321-374 ==
+
+  partition "Load Existing Data" #LightBlue {
+    :SELECT * FROM mail_archive
+    WHERE ma_id = input.ma_id;
+  }
+
+  partition "Update Archive" #LightBlue {
+    :UPDATE mail_archive SET
+    semua field (sama seperti create)
+    WHERE ma_id = input.ma_id;
+  }
+
+  partition "Handle Mail Reference Change" #LightBlue {
+    if (old.ma_ref_id != new.ma_ref_id?) then (yes)
+
+      if (old.ma_ref_id != 0?) then (yes)
+        :Release old mail reference:
+        UPDATE mail SET m_ma_id=NULL
+        WHERE m_id = old.ma_ref_id;
+      else (no)
+      endif
+
+      if (new.ma_ref_id != 0?) then (yes)
+        :Book new mail reference:
+        UPDATE mail SET m_ma_id=archive_id
+        WHERE m_id = new.ma_ref_id;
+      else (no)
+      endif
+
+    else (no, reference tidak berubah)
+    endif
+  }
+
+  :Return success;
+
+elseif (archive/finalize) then
+
+  == archive() — mailarchivemodel.php:376-383 ==
+
+  partition "Finalize" #LightBlue {
+    :UPDATE mail_archive SET
+    - ma_status = 2 (FINALIZED)
+    - ma_archive_date = now()
+    - ma_archive_by_name = user
+    WHERE ma_id = id;
+  }
+
+  :Return success;
+
+else (delete)
+
+  == delete() — mailarchivemodel.php:385-399 ==
+
+  partition "Soft Delete" #LightBlue {
+    :SELECT * FROM mail_archive
+    WHERE ma_id = id;
+
+    :UPDATE mail_archive SET
+    ma_status = 3 (DELETED)
+    WHERE ma_id = id;
+
+    if (ma_ref_id != 0?) then (yes)
+      :Release mail reference:
+      UPDATE mail SET m_ma_id=NULL
+      WHERE m_id = ma_ref_id;
+      note right
+        Membebaskan surat agar
+        bisa di-arsip ulang
+      end note
+    else (no)
+    endif
+  }
+
+  :Return success;
+
+endif
+
+stop
+
+@enduml

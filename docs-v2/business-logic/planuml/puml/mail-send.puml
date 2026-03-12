@@ -1,0 +1,198 @@
+@startuml
+!theme plain
+title send() — Pengiriman Surat (10-Step Orchestration)\nmailmodel.php:812-1016
+
+start
+
+:Step 1: Validasi Recipient;
+
+partition "Cek Penerima" #LightBlue {
+  :Query mail + mail_recipient + mail_category
+  COUNT recipient WHERE m_id = tid;
+
+  if (recipient == 0?) then (yes)
+    :Return ERROR:\nDaftar penerima belum ada;<<#Pink>>
+    stop
+  else (no)
+  endif
+}
+
+:Step 2: Generate Nomor Surat;
+
+:generate_code(m_no, m_category,
+m_type, mcat_code);
+note right
+  Lihat diagram:
+  **mail-generate-code.puml**
+  Skip jika m_no sudah terisi
+end note
+
+:Step 3: Update Status → SENT;
+
+partition "Update Mail Status" #LightBlue {
+  :UPDATE mail SET
+  - m_no = generated code
+  - m_created_date = now()
+  - m_status = MAIL_STATUS_SENT
+  WHERE m_id = tid;
+}
+
+:Step 4: Cek Konfigurasi Notifikasi Email;
+
+partition "Load SMTP Config" #LightBlue {
+  :Query smtp_mail_config:
+  - mail_notif_status → notif_status
+  - mail_notif_method → notif_method;
+
+  if (notif_status == 1?) then (yes)
+    :Load msg_template (template_id=1);
+    :Load sender_mail & sender_alias
+    dari smtp_mail_config;
+  else (no)
+    :template = "" (skip email);
+  endif
+}
+
+:Step 5: Create Inbox per Recipient;
+
+partition "Loop Recipients" #LightBlue {
+  :Query mail_recipient + mail + employee
+  + emp_profile + position + sys_reference
+  WHERE mail_id = tid;
+
+  while (untuk setiap recipient) is (next)
+    :INSERT sys_user_task:
+    - user_id = recipient
+    - folder_id = FOLDER_INBOX
+    - read_status = MAIL_UNREAD;
+
+    if (notif_status=1 AND template ada\nAND recipient.email=1\nAND emp_email tidak kosong?) then (yes)
+      :Build mail_body dari template
+      (replace placeholders per field);
+      note right
+        Trim m_content: potong
+        <div style="margin-left:20px...">
+        agar email tidak terlalu panjang
+      end note
+      :INSERT smtp_mail_log:
+      - mail_from, mail_to
+      - mail_subject, mail_body
+      - mail_status = 0 (queued);
+      :msg_queue++;
+    else (no)
+    endif
+
+    :Capture mcat_id, morg_id
+    dari row terakhir;
+  endwhile (done)
+}
+
+:Step 6: Update Statistik;
+
+if (m_parent_id == 0?\n(bukan reply, surat baru)) then (yes)
+  partition "Statistik Kategori" #LightBlue {
+    :Query mail_category_statistic
+    WHERE period_month = YYYYMM
+    AND category_id = mcat_id;
+
+    if (record exists?) then (yes)
+      :UPDATE total = total + 1;
+    else (no)
+      :INSERT baru (total=1);
+    endif
+  }
+
+  partition "Statistik Organisasi" #LightBlue {
+    :Query mail_org_statistic
+    WHERE period_month = YYYYMM
+    AND created_by_org = morg_id;
+
+    if (record exists?) then (yes)
+      :UPDATE total = total + 1;
+    else (no)
+      :INSERT baru (total=1);
+    endif
+  }
+else (no, ini reply)
+endif
+
+:Step 7: Move Sender Draft → Sent;
+
+partition "Update Sender Folder" #LightBlue {
+  :UPDATE sys_user_task SET
+  - folder_id = FOLDER_SENT
+  - read_status = MAIL_READ
+  WHERE user_id = sender
+  AND tm_id = tid
+  AND folder_id = FOLDER_DRAFT;
+}
+
+:Step 8: Mark Parent as READ (jika reply);
+
+if (m_parent_id != 0\nAND m_folder_id != FOLDER_SENT\nAND m_folder_id < 10?) then (yes)
+  partition "Mark Parent Read" #LightBlue {
+    :UPDATE sys_user_task SET
+    - folder_id = FOLDER_READ
+    - read_status = MAIL_READ
+    WHERE user_id = sender
+    AND tm_id = m_parent_id;
+  }
+else (no)
+endif
+
+:Step 9: Trigger SMTP (jika realtime);
+
+if (msg_queue > 0\nAND notif_method == 1?) then (yes)
+  :Load smtpmodel;
+  :smtp->send(tid);
+  note right
+    Kirim email langsung (realtime).
+    Jika method != 1, email dikirim
+    via scheduled job dari smtp_mail_log
+  end note
+else (no)
+endif
+
+:Step 9b: Update Category Sort Counter;
+
+partition "Update Sort" #LightBlue {
+  :UPDATE mail_category SET
+  sort = sort + 1
+  WHERE mcat_id = mcat_id;
+}
+
+:Step 10: Response Time Tracking;
+
+if (m_parent_id != 0?\n(ini adalah reply)) then (yes)
+  partition "Response Time" #LightBlue {
+    :Get parent mail (m_parent_id);
+
+    if (parent mail exists?) then (yes)
+      :Cek apakah parent sender
+      ada di recipient list surat ini;
+
+      if (parent sender is recipient?\n(ini mail response)) then (yes)
+        :INSERT mail_respontime:
+        - orig_m_id, orig_date
+        - reply_m_id, reply_date = now()
+        - m_type, m_category
+        - respon_time = TIMEDIFF;
+        note right
+          Mengukur waktu respon:
+          berapa lama dari surat asli
+          sampai dibalas
+        end note
+      else (no)
+      endif
+    else (no)
+    endif
+  }
+else (no)
+endif
+
+:Return SUCCESS:
+"Surat berhasil dikirim";
+
+stop
+
+@enduml

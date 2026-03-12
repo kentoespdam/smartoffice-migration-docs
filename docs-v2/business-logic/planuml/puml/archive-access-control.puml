@@ -1,0 +1,104 @@
+@startuml
+!theme plain
+title Archive Access Control — Permission & Notification Workflow\nmailarchivemodel.php:401-590
+
+participant "Controller\n(mailarchive.php)" as Ctrl
+participant "MailArchiveModel" as Model
+participant "MailModel" as MailModel
+database "Database" as DB
+participant "Kepegawaian API\n(target migrasi)" as API
+
+== Part 1: Set Access (set_access) ==
+== mailarchivemodel.php:401-415 ==
+
+Ctrl -> Model : set_access(access[], archive_id)
+
+Model -> DB : DELETE FROM mail_archive_access\nWHERE mail_archive_id = id
+note right
+  Delete-and-reinsert pattern.
+  Semua permission di-reset lalu
+  di-insert ulang dari input.
+end note
+
+loop untuk setiap access entry
+  alt pos_id != 0
+    Model -> DB : INSERT mail_archive_access\n(mail_archive_id, pos_id,\naccess=0/1, download=0/1, history=0/1)
+    note right
+      3 permission levels:
+      - **access**: bisa lihat arsip
+      - **download**: bisa download lampiran
+      - **history**: bisa lihat riwayat
+    end note
+  else pos_id == 0
+    Model -> Model : skip (invalid entry)
+  end
+end
+
+== Part 2: Queue Notification (set_notif) ==
+== mailarchivemodel.php:417-422 ==
+
+Ctrl -> Model : set_notif(archive_id)
+Model -> DB : INSERT mail_archive_notif\n(mail_archive_id, notif_flag=0,\ninsert_date=now())
+note right
+  Flag 0 = belum diproses.
+  Akan di-pickup oleh scheduled job.
+end note
+
+== Part 3: Notification Processing (Scheduled Job) ==
+== mailarchivemodel.php:553-590 ==
+
+note over Model
+  Berikut adalah flow yang dijalankan
+  oleh scheduled job / cron:
+end note
+
+Model -> DB : get_unnotified()\nSELECT * FROM mail_archive_notif\nWHERE notif_flag=0
+DB --> Model : unnotified list
+
+loop untuk setiap unnotified archive
+  Model -> DB : get_archive_by_id(archive_id)
+  DB --> Model : archive object
+
+  Model -> DB : get_allowed_user(archive_id)\nSELECT user_id, emp_id, emp_name...\nFROM mail_archive_access\nJOIN employee (by pos_id)\nJOIN emp_profile, sys_user, position\nWHERE user_status=1
+  note right #Orange
+    **Migrasi:** JOIN employee by pos_id.
+    Di Spring Boot:
+    GET /pegawai/{posId}/position
+    untuk setiap pos_id di access list
+  end note
+  DB --> Model : allowed users[]
+
+  loop untuk setiap allowed user
+    Model -> DB : cek_user_notif(archive_id, user_id)\nSELECT COUNT FROM mail_archive_notif_log
+
+    alt user belum pernah di-notif
+      Model -> MailModel : create_archive_mail_notif(\nuser, archive)
+      note right
+        Lihat diagram:
+        **mail-notif-archive.puml**
+      end note
+
+      Model -> DB : set_user_notif(user_id, archive_id)\nINSERT mail_archive_notif_log\n(mail_archive_id, user_id, notif_date)
+    else user sudah pernah di-notif
+      Model -> Model : skip
+    end
+  end
+
+  Model -> DB : mark_notified(archive_id)\nUPDATE mail_archive_notif\nSET notif_flag=1, processed_date=now()
+end
+
+== Part 4: Search with Access Control ==
+== mailarchivemodel.php:123-261 ==
+
+note over Ctrl, DB
+  Saat user melakukan search arsip,
+  query JOIN mail_archive_access
+  untuk filter berdasarkan pos_id user
+  dan flag access=1
+end note
+
+Ctrl -> Model : search(params)
+Model -> DB : SELECT ... FROM mail_archive ma\nJOIN mail_archive_access maa\nON maa.mail_archive_id=ma.ma_id\nWHERE maa.pos_id = user.pos_id\nAND maa.access = 1\nAND ma_status = 2
+DB --> Model : filtered archives
+
+@enduml

@@ -1,0 +1,76 @@
+@startuml
+!theme plain
+title create_publication_mail_notif() — Notifikasi Publikasi Baru\nmailmodel.php:337-442
+
+participant "Caller\n(Publication Module)" as Caller
+participant "MailModel" as Model
+database "Database" as DB
+participant "Kepegawaian API\n(target migrasi)" as API
+
+Caller -> Model : create_publication_mail_notif(publication)
+
+== Step 1: Resolve CLIENT_CODE Config ==
+
+group CLIENT_CODE Branching
+  alt BMS
+    Model -> Model : m_type=1, m_category=86\nm_category_code="485.1"\nref_code="m_number_format_bms"
+  else SMD
+    Model -> Model : m_type=1, m_category=1\nm_category_code="000"\nref_code="m_number_format_smd"
+  else BPN
+    Model -> Model : m_type=1, m_category=3\nm_category_code="C"\nref_code="m_number_format_blp"
+  end
+  Model -> Model : user_id=2 (Administrator)
+end
+
+== Step 2: Generate Nomor Surat ==
+
+Model -> DB : SELECT text FROM sys_reference\nWHERE code=ref_code
+DB --> Model : no_template
+
+Model -> Model : Replace placeholders:\n#org_code#→"00", #type#→"I"\n#MR#→bulan romawi, #YYYY#→tahun\n#m_cat#→m_category_code
+
+Model -> DB : get_trans_sequence(\nTASK_MAIL, "00-"+m_category_code, 3)
+DB --> Model : sequence number
+
+Model -> Model : Replace #seq# → sequence\n→ kode surat final
+
+== Step 3: Load & Fill Template ==
+
+Model -> DB : SELECT message FROM msg_template\nWHERE template_id=2
+DB --> Model : template
+
+Model -> Model : Replace dalam template:\n#title#, #type#, #created_by_name#\n#created_by_title#, #published_date#
+
+== Step 4: Insert Mail ==
+
+Model -> DB : INSERT mail\n(m_no, m_date, m_type, m_category,\nm_subject="Publikasi baru",\nm_content, m_status=SENT,\nm_created_by=2/Administrator,\nm_to_str="Semua Karyawan")
+DB --> Model : mail_id
+
+Model -> DB : UPDATE mail SET\nm_root_id=mail_id, m_parent_id=0\nWHERE m_id=mail_id
+note right
+  Self-reference untuk
+  threaded view (root of new thread)
+end note
+
+== Step 5: Create Sent Item (Admin) ==
+
+Model -> DB : INSERT sys_user_task\n(user_id=2, tm_id=mail_id,\nfolder_id=SENT, read_status=READ)
+
+== Step 6: Create Inbox untuk SEMUA Karyawan Aktif ==
+
+Model -> DB : SELECT * FROM sys_user u\nJOIN employee e\nJOIN emp_profile p\nJOIN position ps\nWHERE user_status=1
+note right #Orange
+  **Migrasi:** Query ini JOIN tabel employee lokal.
+  Di Spring Boot, ganti dengan:
+  GET /pegawai?status=ACTIVE
+  dari Kepegawaian API
+end note
+DB --> Model : all active users
+
+loop untuk setiap user aktif
+  Model -> DB : INSERT mail_recipient\n(mail_id, user_id, emp_id,\nemp_name, pos_id, pos_name,\ncirculation=4, email=0, sms=0)
+
+  Model -> DB : INSERT sys_user_task\n(user_id, tm_id=mail_id,\nfolder_id=INBOX, read_status=UNREAD)
+end
+
+@enduml

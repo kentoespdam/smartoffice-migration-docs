@@ -1,0 +1,84 @@
+@startuml
+!theme plain
+title make_nlevel_threaded() + find_node() — N-Level Thread Tree Builder\ndirect/mail.php:219-281
+
+start
+
+:Input: flat array of mail data\n(sudah di-sort by m_created_date);
+
+:dest = [] (empty tree);
+
+while (untuk setiap row dalam src) is (next row)
+
+  :Set row.leaf = TRUE;
+
+  if (m_attachment_qty == 0?) then (yes)
+    :iconCls = "email";
+  else (no)
+    :iconCls = "email-attach";
+  endif
+
+  if (dest masih kosong?) then (yes)
+    :Push row ke dest (top level);
+  else (no)
+
+    :found = find_node(dest, row);
+
+    if (found?) then (yes)
+      note right
+        find_node() berhasil menempel
+        row ke parent yang tepat
+      end note
+    else (no, parent tidak ditemukan)
+
+      :=== Fallback 1: Cari Root Tree ===;
+
+      :Loop dest mencari node\ndengan m_root_id yang sama;
+
+      if (root tree ditemukan?) then (yes)
+        :Taruh sebagai child level 1\ndari root (bukan nested);
+        note right
+          Parent spesifik tidak ada
+          tapi root thread ditemukan.
+          Taruh langsung di bawah root.
+        end note
+        :found = TRUE;
+      else (no)
+
+        :=== Fallback 2: Top Level ===;
+
+        :Push row ke dest (top level);
+        note right
+          Root thread juga tidak ada.
+          Orphan mail ditaruh di
+          level paling atas.
+        end note
+      endif
+
+    endif
+  endif
+
+endwhile (all rows processed)
+
+:Return dest (nested tree);
+
+stop
+
+legend right
+**find_node(&dest, row)** (direct/mail.php:257-281)
+
+Untuk setiap node di dest:
+1. Cek `m_root_id == row.m_root_id` (same thread?)
+2. Jika ya, cek `m_id == row.m_parent_id` (direct parent?)
+   → Jika ya: append row sebagai child, return TRUE
+   → Jika tidak: recursive call pada `children[]`
+3. Jika root_id tidak match: skip ke node berikutnya
+
+Side effect: modifikasi dest in-place (`&dest`)
+
+⚠️ Bug potensial: fungsi tidak explicit return FALSE.
+Bergantung pada PHP implicit null → falsy.
+Di Spring Boot: pastikan `return false` explicit.
+endlegend
+
+@enduml

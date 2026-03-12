@@ -1,0 +1,69 @@
+@startuml
+!theme plain
+title create_upd_emp_tanggungan_mail_notif() — Notifikasi Perubahan Tanggungan\nmailmodel.php:444-570
+
+participant "Caller\n(Kepegawaian Module)" as Caller
+participant "MailModel" as Model
+database "Database" as DB
+
+Caller -> Model : create_upd_emp_tanggungan_mail_notif(\nemp, lepas_tanggungan[])
+
+== Step 1: Resolve CLIENT_CODE Config ==
+
+group CLIENT_CODE Branching
+  alt BMS
+    Model -> Model : m_type=1, m_category=1 (UMUM)\nm_category_code="000"\nref_code="m_number_format_bms"
+  else SMD
+    Model -> Model : m_type=1, m_category=1\nm_category_code="000"\nref_code="m_number_format_smd"
+  else BPN
+    Model -> Model : m_type=1, m_category=1\nm_category_code="000"\nref_code="m_number_format_blp"
+  end
+  Model -> Model : user_id=2 (Administrator)
+end
+
+== Step 2: Generate Nomor Surat ==
+
+Model -> DB : SELECT text FROM sys_reference\nWHERE code=ref_code
+DB --> Model : no_template
+
+Model -> Model : Replace placeholders\n(sama seperti notif lainnya)
+
+Model -> DB : get_trans_sequence(\nTASK_MAIL, "00-000", 3)
+DB --> Model : sequence
+
+== Step 3: Build Detail HTML dari Tanggungan ==
+
+Model -> Model : Load msg_template (template_id=4)
+
+loop untuk setiap lepas_tanggungan
+  Model -> Model : Build detail HTML:\n- Nama, Tgl Lahir, Usia\n- Status Pendidikan (0→"-", 1→"Belum Sekolah",\n  2→"Sekolah", 3→"Selesai Sekolah")\n- Status Nikah (0→"-", 1→"Belum Menikah",\n  2→"Telah Menikah")
+end
+
+Model -> Model : Replace #detail# dalam template
+
+== Step 4: Insert Mail ==
+
+Model -> DB : INSERT mail\n(m_subject="Perubahan data tanggungan",\nm_to_str=emp.emp_name,\nm_status=SENT, ...)
+DB --> Model : mail_id
+
+Model -> DB : UPDATE mail SET\nm_root_id=mail_id, m_parent_id=0
+
+== Step 5: Create Sent Item (Admin) ==
+
+Model -> DB : INSERT sys_user_task\n(user_id=2, folder_id=SENT)
+
+== Step 6: Create Inbox untuk Karyawan Terkait ==
+
+Model -> DB : SELECT * FROM sys_user u\nJOIN employee e JOIN emp_profile p\nJOIN position ps\nWHERE user_status=1\nAND e.emp_id=emp.emp_id
+note right #Orange
+  **Migrasi:** Single employee lookup.
+  Di Spring Boot: GET /pegawai/{nipam}/nipam
+end note
+DB --> Model : target user(s)
+
+loop untuk setiap user (biasanya 1)
+  Model -> DB : INSERT mail_recipient\n(circulation=4, email=0, sms=0)
+  Model -> DB : INSERT sys_user_task\n(folder_id=INBOX, read_status=UNREAD)
+end
+
+@enduml

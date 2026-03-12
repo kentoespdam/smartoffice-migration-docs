@@ -1,0 +1,99 @@
+@startuml
+!theme plain
+title Mail Folder Lifecycle — move() + restore() + empty_trash()\nmailmodel.php:1018-1029, 1268-1300
+
+[*] --> DRAFT : save() creates draft\n(folder_id=DRAFT)
+
+DRAFT --> SENT : send()\n(update folder_id=SENT)
+
+SENT --> INBOX : send() creates\nsys_user_task per recipient\n(folder_id=INBOX)
+
+INBOX --> READ : setRead() / send() reply\n(folder_id=READ)
+
+state "User Actions" as actions {
+
+  state "move()" as move_action
+  note right of move_action
+    **move(m_id, folder_id, origin_folder)**
+    mailmodel.php:1268-1274
+
+    UPDATE sys_user_task SET
+    folder_id = target_folder
+    WHERE user_id = current_user
+    AND tm_id = m_id
+    AND folder_id = origin_folder
+
+    Bisa pindah ke folder manapun
+    termasuk folder personal (>10)
+  end note
+
+  state "delete()" as delete_action
+  note right of delete_action
+    **delete(m_id, restore_folder_id)**
+    mailmodel.php:1018-1029
+
+    if restore_folder_id == FOLDER_DELETED:
+      → folder_id = -1 (permanent delete)
+    else:
+      → folder_id = FOLDER_DELETED
+      → simpan restore_folder_id
+  end note
+}
+
+INBOX --> PERSONAL : move()\n(folder_id > 10)
+READ --> PERSONAL : move()
+SENT --> PERSONAL : move()
+
+INBOX --> DELETED : delete()\n(simpan restore_folder_id=INBOX)
+READ --> DELETED : delete()\n(simpan restore_folder_id=READ)
+SENT --> DELETED : delete()\n(simpan restore_folder_id=SENT)
+PERSONAL --> DELETED : delete()\n(simpan restore_folder_id)
+
+state "restore()" as restore_action
+note right of restore_action
+  **restore(m_id)**
+  mailmodel.php:1277-1291
+
+  1. Lookup restore_folder_id
+     dari sys_user_task WHERE
+     folder_id=DELETED
+  2. Call move(m_id,
+     restore_folder_id, DELETED)
+
+  Mengembalikan ke folder asal
+  sebelum dihapus
+end note
+
+DELETED --> INBOX : restore()\n(jika asal INBOX)
+DELETED --> READ : restore()\n(jika asal READ)
+DELETED --> SENT : restore()\n(jika asal SENT)
+DELETED --> PERSONAL : restore()\n(jika asal personal)
+
+state "empty_trash()" as empty_action
+note right of empty_action
+  **empty_trash()**
+  mailmodel.php:1293-1300
+
+  UPDATE sys_user_task SET
+  folder_id = -1
+  restore_folder_id = FOLDER_DELETED
+  WHERE user_id = current_user
+  AND folder_id = FOLDER_DELETED
+
+  Semua surat di trash
+  → permanent delete (folder_id=-1)
+end note
+
+DELETED --> PERMANENT : delete() dari trash\n(restore_folder_id=DELETED)\natau empty_trash()
+
+state "PERMANENT\n(folder_id = -1)" as PERMANENT
+
+PERMANENT --> [*] : Tidak bisa di-restore
+
+note bottom of PERMANENT
+  Data TIDAK dihapus dari DB.
+  Hanya folder_id = -1.
+  Masih bisa di-query untuk audit.
+end note
+
+@enduml
