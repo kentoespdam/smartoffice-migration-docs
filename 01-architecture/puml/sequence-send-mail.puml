@@ -1,0 +1,98 @@
+@startuml sequence-send-mail
+!theme plain
+
+title Sequence Diagram: Kirim Surat (Send Mail)
+
+actor "User" as U
+participant "Client\n(Browser)" as C
+participant "AppWrite\n(Auth)" as AW
+participant "MailController" as MC
+participant "MailSendService" as MSS
+participant "MailNumberGenerator" as MNG
+participant "HrServiceClient" as HR
+participant "NotificationService" as NS
+participant "MailRepository" as MR
+participant "UserTaskRepository" as UTR
+participant "SmtpMailLogRepository" as SML
+participant "HR REST API\n(Kepegawaian)" as HRAPI
+
+== Authentication ==
+U -> C : Login
+C -> AW : POST /v1/account/sessions/email\n{email, password}
+AW --> C : JWT Token + Session
+note right of AW
+  AppWrite v1.3.4
+  Self-hosted
+  Returns JWT with claims:
+  userId, empId, posId
+end note
+
+== Create Draft (Simpan Draft) ==
+U -> C : Compose mail + Add recipients
+C -> MC : POST /api/v1/mails\n{Authorization: Bearer JWT}\n{subject, content, recipients[], send: false}
+MC -> MC : Extract userId from JWT
+MC -> MSS : createDraft(request, userId)
+MSS -> MR : save(mail) → status=DRAFT
+MSS -> UTR : save(userTask) → folder=DRAFT
+MSS --> MC : MailResponse {id, status: DRAFT}
+MC --> C : 201 Created
+
+== Send Mail (Kirim Surat) ==
+U -> C : Click "Kirim"
+C -> MC : POST /api/v1/mails/{mailId}/send\n{Authorization: Bearer JWT}
+
+MC -> MSS : sendMail(mailId, userId)
+
+' Validate recipients
+MSS -> MR : findByIdWithRecipients(mailId)
+alt No Recipients
+    MSS --> MC : throw NoRecipientException
+    MC --> C : 400 "Daftar penerima belum ada"
+end
+
+' Generate mail number
+MSS -> MNG : generateNumber(mailType, categoryCode, orgCode)
+MNG -> MR : getNextSequence(prefix)
+MNG --> MSS : "001/AITI-I/III/2026-485"
+
+' Update mail status
+MSS -> MR : updateStatusAndNumber(mailId, SENT, number)
+
+' Create inbox for each recipient
+loop for each recipient
+    MSS -> UTR : save(recipientUserId, mailId, INBOX, UNREAD)
+
+    ' Check email notification flag
+    alt recipient.emailFlag == true
+        MSS -> HR : getEmployeeEmail(recipient.empId)
+        HR -> HRAPI : GET /api/employees/{empId}
+        HRAPI --> HR : {empEmail, empName, ...}
+        HR --> MSS : employeeDTO
+
+        MSS -> NS : queueEmailNotification(recipient, mail)
+        NS -> SML : save(smtpMailLog) → status=PENDING
+    end
+end
+
+' Update sender folder: DRAFT → SENT
+MSS -> UTR : updateFolder(userId, mailId, DRAFT → SENT)
+
+' Update statistics
+MSS -> MSS : updateCategoryStatistic(categoryId, period)
+MSS -> MSS : updateOrgStatistic(orgId, period)
+
+' If reply: move parent to READ
+alt isReply (parentId != 0)
+    MSS -> UTR : updateFolder(userId, parentId, INBOX → READ)
+end
+
+' Process notification queue (async)
+MSS ->> NS : processQueue(mailId)
+NS -> NS : sendSmtpEmails()
+NS -> NS : sendFirebasePush()
+
+MSS --> MC : MailResponse {id, number, status: SENT}
+MC --> C : 200 OK {id, number, status: "SENT"}
+C --> U : "Surat berhasil dikirim"
+
+@enduml

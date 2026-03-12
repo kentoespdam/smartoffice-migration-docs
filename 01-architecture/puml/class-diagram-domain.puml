@@ -1,0 +1,320 @@
+@startuml class-diagram-domain
+!theme plain
+skinparam classAttributeIconSize 0
+
+title Mail Service - Domain Entity Class Diagram
+
+enum MailStatus {
+    DRAFT = 0
+    SENT = 1
+}
+
+enum FolderType {
+    INBOX = 1
+    SENT = 2
+    DRAFT = 3
+    READ = 4
+    DELETED = 5
+    PERSONAL_START = 10
+}
+
+enum CirculationType {
+    ASLI = 1
+    TEMBUSAN = 2
+    DISPOSISI = 3
+    PEMBERITAHUAN = 4
+}
+
+enum RefType {
+    MAIL = 1
+    ARCHIVE = 2
+}
+
+enum ArchiveStatus {
+    DRAFT = 1
+    PUBLISHED = 2
+    DELETED = 3
+}
+
+enum AttachmentStatus {
+    AVAILABLE = 1
+    DELETED = 2
+}
+
+class Mail {
+    - id : Long <<PK>>
+    - number : String
+    - date : LocalDate
+    - rootId : Long <<FK self>>
+    - parentId : Long <<FK self>>
+    - typeId : Integer <<FK MailType>>
+    - categoryId : Integer <<FK MailCategory>>
+    - subject : String
+    - content : String <<TEXT>>
+    - note : String <<TEXT>>
+    - maxResponseDate : LocalDateTime
+    - status : MailStatus
+    - createdDate : LocalDateTime
+    - createdBy : Integer
+    - createdByName : String
+    - attachmentCount : Integer
+    - recipientsSummary : String
+    - archiveId : Long <<FK MailArchive>>
+    --
+    - incomingMailNumber : String
+    - incomingMailSource : String
+    - incomingMailDate : LocalDate
+    - outgoingDestination : String
+    - outgoingRecipientName : String
+}
+
+class MailRecipient {
+    - id : Long <<PK>>
+    - mailId : Long <<FK Mail>>
+    - userId : Integer
+    - empId : Integer
+    - empName : String
+    - posId : Integer
+    - posName : String
+    - circulation : CirculationType
+    - emailFlag : Boolean
+    - smsFlag : Boolean
+}
+
+class MailFolder {
+    - folderId : Long <<PK>>
+    - parentFolderId : Long <<FK self>>
+    - ownerId : Integer
+    - iconClass : String
+    - name : String
+    - status : Integer
+    - createdDate : LocalDateTime
+}
+note right of MailFolder
+  ownerId = 0 → System folder
+  ownerId > 0 → Personal folder
+end note
+
+class UserTask {
+    - id : Long <<PK>>
+    - userId : Integer
+    - mailId : Long <<FK Mail>>
+    - folderId : Long <<FK MailFolder>>
+    - readStatus : Integer
+    - restoreFolderId : Long
+    - mailCreatedDate : LocalDateTime
+}
+note right of UserTask
+  Pivot table: routes mails
+  to user folders.
+  readStatus: 0=Unread, 1=Read
+end note
+
+class MailType {
+    - id : Integer <<PK>>
+    - name : String
+    - status : Integer
+}
+note left of MailType
+  e.g.: Internal, Memo, External
+  (3 records typical)
+end note
+
+class MailCategory {
+    - id : Integer <<PK>>
+    - mailTypeId : Integer <<FK MailType>>
+    - code : String
+    - name : String
+    - status : String
+    - sort : Integer
+}
+
+class MailArchive {
+    - id : Long <<PK>>
+    - number : String
+    - mailDate : LocalDate
+    - mailTypeId : Integer <<FK MailType>>
+    - categoryCode : String
+    - categoryId : Integer <<FK MailCategory>>
+    - orgCode : String
+    - orgId : Integer
+    - refMailId : Long <<FK Mail>>
+    - refMailNumber : String
+    - sentTo : String
+    - subject : String
+    - content : String <<TEXT>>
+    - note : String
+    - status : ArchiveStatus
+    - secretType : Integer
+    --
+    - locBuilding : Integer
+    - locFloor : Integer
+    - locRoom : Integer
+    - locRack : String
+    - locTier : String
+    - locBox : String
+    --
+    - keyword : String
+    - keywordIndexFlag : Integer
+    - archiveDate : LocalDateTime
+    - archiveByName : String
+    - officeCode : String
+}
+
+class MailArchiveAccess {
+    - id : Long <<PK>>
+    - archiveId : Long <<FK MailArchive>>
+    - posId : Integer
+    - access : Boolean
+    - download : Boolean
+    - history : Boolean
+}
+note right of MailArchiveAccess
+  Access control per
+  position/jabatan
+  (not per user)
+end note
+
+class Attachment {
+    - id : Long <<PK>>
+    - refType : RefType
+    - refId : Long
+    - fileExt : String
+    - fileSize : Integer
+    - originalFilename : String
+    - systemFilename : String
+    - docNotes : String
+    - uploadDate : LocalDateTime
+    - uploadByName : String
+    - status : AttachmentStatus
+    - recFlag : Integer
+    - approveDate : LocalDateTime
+    - approveBy : String
+}
+note left of Attachment
+  Polymorphic reference:
+  refType=1 → Mail
+  refType=2 → MailArchive
+end note
+
+class AttachmentDownloadHistory {
+    - id : Long <<PK>>
+    - attachmentId : Long <<FK Attachment>>
+    - userId : Integer
+    - empName : String
+    - empPosName : String
+    - downloadTime : LocalDateTime
+}
+
+class MailResponseTime {
+    - id : Long <<PK>>
+    - origMailId : Long <<FK Mail>>
+    - origDate : LocalDateTime
+    - replyMailId : Long <<FK Mail>>
+    - replyDate : LocalDateTime
+    - mailType : Integer
+    - mailCategory : Integer
+    - responseTime : Long
+}
+
+class MailCategoryStatistic {
+    - id : Long <<PK>>
+    - periodMonth : String
+    - categoryId : Integer <<FK MailCategory>>
+    - total : Integer
+}
+
+class MailOrgStatistic {
+    - id : Long <<PK>>
+    - periodMonth : String
+    - createdByOrg : Integer
+    - total : Integer
+}
+
+class SmtpMailConfig {
+    - id : Integer <<PK>>
+    - config : String
+    - value : String
+    - lastUpdate : LocalDateTime
+}
+
+class SmtpMailLog {
+    - id : Long <<PK>>
+    - reqDate : LocalDateTime
+    - refMailId : Long <<FK Mail>>
+    - from : String
+    - fromAlias : String
+    - to : String
+    - toAlias : String
+    - subject : String
+    - body : String <<TEXT>>
+    - status : Integer
+    - sentDate : LocalDateTime
+    - error : String
+}
+
+class MailArchiveNotif {
+    - id : Long <<PK>>
+    - archiveId : Long <<FK MailArchive>>
+    - notifFlag : Integer
+    - insertDate : LocalDateTime
+    - processedDate : LocalDateTime
+}
+
+class MailArchiveNotifLog {
+    - id : Long <<PK>>
+    - archiveId : Long <<FK MailArchive>>
+    - userId : Integer
+    - notifDate : LocalDateTime
+}
+
+' === RELATIONSHIPS ===
+
+' Mail self-reference (threading)
+Mail "1" --> "0..*" Mail : rootId\n(thread root)
+Mail "1" --> "0..*" Mail : parentId\n(direct parent)
+
+' Mail → Recipients
+Mail "1" --> "0..*" MailRecipient : mailId
+
+' Mail → Type & Category
+Mail "0..*" --> "1" MailType : typeId
+Mail "0..*" --> "1" MailCategory : categoryId
+
+' MailCategory → MailType
+MailCategory "0..*" --> "1" MailType : mailTypeId
+
+' Mail → Archive (optional)
+Mail "0..1" --> "0..1" MailArchive : archiveId
+
+' UserTask (routing)
+UserTask "0..*" --> "1" Mail : mailId
+UserTask "0..*" --> "1" MailFolder : folderId
+
+' MailFolder self-reference
+MailFolder "0..*" --> "0..1" MailFolder : parentFolderId
+
+' Archive relationships
+MailArchive "1" --> "0..*" MailArchiveAccess : archiveId
+MailArchive "0..1" --> "0..1" Mail : refMailId
+MailArchive "0..*" --> "1" MailType : mailTypeId
+MailArchive "0..*" --> "1" MailCategory : categoryId
+MailArchive "1" --> "0..*" MailArchiveNotif : archiveId
+MailArchiveNotif "1" --> "0..*" MailArchiveNotifLog : archiveId
+
+' Attachment (polymorphic)
+Attachment "0..*" --> "1" Mail : refType=MAIL\nrefId=mailId
+Attachment "0..*" --> "1" MailArchive : refType=ARCHIVE\nrefId=archiveId
+Attachment "1" --> "0..*" AttachmentDownloadHistory : attachmentId
+
+' Statistics
+MailCategoryStatistic "0..*" --> "1" MailCategory : categoryId
+
+' Response Time
+MailResponseTime "0..*" --> "1" Mail : origMailId
+MailResponseTime "0..*" --> "1" Mail : replyMailId
+
+' SMTP
+SmtpMailLog "0..*" --> "1" Mail : refMailId
+
+@enduml

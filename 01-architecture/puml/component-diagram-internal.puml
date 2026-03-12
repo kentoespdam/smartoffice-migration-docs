@@ -1,0 +1,103 @@
+@startuml component-diagram-internal
+!theme plain
+skinparam componentStyle rectangle
+
+title Mail Service - Internal Component Architecture
+
+package "Mail Service (Spring Boot)" {
+
+    package "Controller Layer" {
+        [MailController] as MC
+        [MailFolderController] as MFC
+        [MailArchiveController] as MAC
+        [MailCategoryController] as MCC
+        [MailTypeController] as MTC
+        [AttachmentController] as AC
+        [StatisticController] as SC
+    }
+
+    package "Security" {
+        [JwtAuthenticationFilter] as JwtFilter
+        [AppWriteTokenValidator] as TokenValidator
+        [SecurityContext\n(userId, empId, posId, roles)] as SecCtx
+    }
+
+    package "Service Layer" {
+        [MailService] as MSvc
+        [MailSendService] as MSSvc
+        [MailArchiveService] as MASvc
+        [MailFolderService] as MFSvc
+        [MailNumberGeneratorService] as MNGSvc
+        [MailStatisticService] as MSTSvc
+        [NotificationService] as NSvc
+        [AttachmentService] as ASvc
+    }
+
+    package "Integration Layer" {
+        [HrServiceClient\n(WebClient + Cache)] as HrClient
+        [AppWriteClient] as AWClient
+        [SmtpMailService] as SmtpSvc
+        [FirebasePushService] as FBSvc
+    }
+
+    package "Repository Layer (Spring Data JPA)" {
+        [MailRepository] as MR
+        [MailRecipientRepository] as MRR
+        [MailFolderRepository] as MFR
+        [UserTaskRepository] as UTR
+        [MailArchiveRepository] as MAR
+        [MailArchiveAccessRepository] as MAAR
+        [MailCategoryRepository] as MCR
+        [MailTypeRepository] as MTR
+        [AttachmentRepository] as AR
+        [SmtpMailLogRepository] as SMLR
+    }
+
+    package "Domain (JPA Entities)" {
+        [Mail] as ME
+        [MailRecipient] as MRE
+        [MailFolder] as MFE
+        [UserTask] as UTE
+        [MailArchive] as MAE
+        [MailCategory] as MCE
+        [MailType] as MTE
+        [Attachment] as AE
+    }
+}
+
+' Security flow
+JwtFilter --> TokenValidator
+TokenValidator --> SecCtx
+
+' Controller → Service
+MC --> MSvc
+MC --> MSSvc
+MFC --> MFSvc
+MAC --> MASvc
+MCC ..> MCR : direct CRUD
+MTC ..> MTR : direct CRUD
+AC --> ASvc
+SC --> MSTSvc
+
+' Service → Service
+MSSvc --> MNGSvc : Generate number
+MSSvc --> NSvc : Trigger notifications
+MSSvc --> MSTSvc : Update statistics
+MASvc --> ASvc : Copy attachments
+
+' Service → Integration
+MSvc --> HrClient : Lookup employee
+MASvc --> HrClient : Lookup positions
+NSvc --> SmtpSvc : Email delivery
+NSvc --> FBSvc : Push notification
+
+' Service → Repository
+MSvc --> MR
+MSvc --> MRR
+MSvc --> UTR
+MFSvc --> MFR
+MASvc --> MAR
+MASvc --> MAAR
+ASvc --> AR
+
+@enduml

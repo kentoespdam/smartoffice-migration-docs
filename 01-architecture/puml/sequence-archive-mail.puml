@@ -1,0 +1,89 @@
+@startuml sequence-archive-mail
+!theme plain
+
+title Sequence Diagram: Arsip Surat dari Mail
+
+actor "User" as U
+participant "Client" as C
+participant "AppWrite" as AW
+participant "MailController" as MC
+participant "MailArchiveService" as MAS
+participant "HrServiceClient" as HR
+participant "AttachmentService" as AS
+participant "MailArchiveRepository" as MAR
+participant "MailRepository" as MR
+participant "HR REST API" as HRAPI
+
+== Pre-check: Can Archive? ==
+U -> C : Click "Arsipkan Surat"
+C -> MC : POST /api/v1/mails/{mailId}/archive\n{Authorization: Bearer JWT}
+
+MC -> MC : Extract userId, roles from JWT
+
+' Check role permission
+alt User has no ROLE_MAIL_ARCHIVE
+    MC --> C : 403 Forbidden\n"Anda tidak memiliki hak untuk melakukan pengarsipan"
+end
+
+MC -> MAS : prepareArchive(mailId, userId)
+
+' Get root mail (for thread)
+MAS -> MR : findById(mailId)
+MAS -> MR : findById(mail.rootId)
+
+' Check if already archived
+alt rootMail.archiveId != null
+    MAS -> MAR : findById(rootMail.archiveId)
+    MAS --> MC : 409 Conflict\n"Sudah diarsipkan oleh {name} dengan nomor {code}"
+end
+
+' Check attachments exist
+alt mail.attachmentCount == 0
+    MAS --> MC : 400 Bad Request\n"Surat tidak memiliki lampiran"
+end
+
+' Copy attachments to temp
+MAS -> AS : copyAttachments(tempId, mailId, MAIL → ARCHIVE)
+
+MAS --> MC : ArchivePrepareResponse {tempId, rootMail}
+MC --> C : 200 OK {tempId, rootMailData}
+
+== Submit Archive Form ==
+U -> C : Fill archive form\n(category, location, access, keywords)
+C -> MC : POST /api/v1/archives\n{archiveData + accessList}
+
+MC -> MAS : createArchive(request)
+
+' Generate archive number
+MAS -> MAS : generateArchiveCode(type, category, org)
+
+' Get org data from HR
+MAS -> HR : getOrganization(orgId)
+HR -> HRAPI : GET /api/organizations/{orgId}
+HRAPI --> HR : {orgName, mailCode}
+HR --> MAS : OrganizationDTO
+
+' Insert archive
+MAS -> MAR : save(mailArchive)
+
+' Update attachment refs
+MAS -> AS : updateRef(ARCHIVE, tempId, archiveId)
+
+' Set access per position
+loop for each position in accessList
+    MAS -> MAR : saveAccess(archiveId, posId, access, download, history)
+end
+
+' Link archive to root mail
+MAS -> MR : updateArchiveId(rootMailId, archiveId)
+
+' Trigger notification (if status=Published)
+alt status == PUBLISHED
+    MAS -> MAS : createNotification(archiveId)
+end
+
+MAS --> MC : ArchiveResponse {id, code}
+MC --> C : 201 Created {id, archiveCode}
+C --> U : "Arsip berhasil dibuat: {archiveCode}"
+
+@enduml

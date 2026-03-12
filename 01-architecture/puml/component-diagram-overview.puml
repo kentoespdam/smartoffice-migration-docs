@@ -1,0 +1,89 @@
+@startuml component-diagram-overview
+!theme plain
+skinparam componentStyle rectangle
+
+title SmartOffice - Component Diagram: Service Decoupling
+
+package "Client Layer" {
+    [Web Client\n(ExtJS → React/Vue)] as WebClient
+    [Mobile Client\n(Android/iOS)] as MobileClient
+}
+
+package "Authentication" <<cloud>> {
+    [AppWrite v1.3.4\n(Self-Hosted)] as AppWrite
+}
+
+package "Mail Service (Persuratan)" <<frame>> {
+    [Mail REST API\n/api/v1/mails/**] as MailAPI
+    [Archive REST API\n/api/v1/archives/**] as ArchiveAPI
+    [Master Data API\n/api/v1/mail-types/**\n/api/v1/mail-categories/**] as MasterAPI
+    [Attachment API\n/api/v1/attachments/**] as AttachmentAPI
+    [Statistics API\n/api/v1/statistics/**] as StatAPI
+
+    [Mail Service Layer] as MailSvc
+    [Archive Service Layer] as ArchiveSvc
+    [Notification Service\n(SMTP + Firebase)] as NotifSvc
+    [Number Generator\n(Sequence Service)] as NumGen
+
+    database "Mail Database\n(MariaDB)" as MailDB {
+        [mail]
+        [mail_recipient]
+        [mail_folder]
+        [mail_archive]
+        [mail_category]
+        [mail_type]
+        [attachments]
+        [smtp_mail_log]
+    }
+
+    storage "File Storage\n(/attachments/)" as FileStore
+}
+
+package "HR Service (Kepegawaian)" <<frame>> {
+    [HR REST API\nhttp://192.168.1.214:8080] as HRAPI
+    database "HR Database" as HRDB
+}
+
+' Client connections
+WebClient --> AppWrite : Login/JWT
+MobileClient --> AppWrite : Login/JWT
+
+WebClient --> MailAPI : Bearer JWT
+WebClient --> ArchiveAPI : Bearer JWT
+WebClient --> MasterAPI : Bearer JWT
+WebClient --> AttachmentAPI : Bearer JWT
+MobileClient --> MailAPI : Bearer JWT
+
+' Internal Mail Service
+MailAPI --> MailSvc
+ArchiveAPI --> ArchiveSvc
+MailSvc --> NumGen : Generate mail number
+MailSvc --> NotifSvc : Send notifications
+MailSvc --> MailDB : CRUD
+ArchiveSvc --> MailDB : CRUD
+AttachmentAPI --> FileStore : Upload/Download
+AttachmentAPI --> MailDB : Metadata
+
+' Integration
+MailSvc --> HRAPI : "GET employee/position\n(via WebClient + Cache)"
+ArchiveSvc --> HRAPI : "GET position employees\n(for access control)"
+MailAPI --> AppWrite : Validate JWT token
+
+HRAPI --> HRDB
+
+note right of HRAPI
+  **Integration Contract:**
+  - GET /api/employees/{empId}
+  - GET /api/employees?status=active
+  - GET /api/positions/{posId}
+  - GET /api/organizations/{orgId}
+  - Response: EmployeeDTO, PositionDTO
+end note
+
+note bottom of MailDB
+  **Ownership: Mail Service**
+  17 tables fully owned
+  No direct HR table access
+end note
+
+@enduml

@@ -1,0 +1,26 @@
+@startuml auth-flow
+!theme plain
+
+title Authentication & Authorization Flow (AppWrite)
+
+actor "Client\n(ExtJS/Mobile)" as C
+participant "AppWrite\n(Auth v1.3.4)" as AW
+participant "Mail Service" as MS
+
+C -> AW : Login\nPOST /v1/account/sessions/email\n{email, password}
+AW --> C : JWT Token + Session
+
+note right of AW
+  AppWrite v1.3.4
+  Self-hosted
+  JWT claims:
+  userId, empId, posId
+end note
+
+C -> MS : Request\nAuthorization: Bearer {jwt}
+
+MS -> MS : JWT Filter\n- Validate token with AppWrite SDK\n- Extract: userId, empId, posId, roles
+
+MS --> C : Response
+
+@enduml

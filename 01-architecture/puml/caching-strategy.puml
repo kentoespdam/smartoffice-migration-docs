@@ -1,0 +1,19 @@
+@startuml caching-strategy
+!theme plain
+
+title Caching Strategy untuk HR Data
+
+rectangle "Mail Service" as MS
+rectangle "Local Cache\n(Redis/Caffeine)" as Cache
+rectangle "HR REST API\n(Kepegawaian)" as HR
+
+MS --> Cache
+Cache --> HR
+
+note bottom of Cache
+  Employee: 5-15 min TTL
+  Position/Org: 30-60 min TTL
+  Invalidation: event-driven (phase 2)
+end note
+
+@enduml

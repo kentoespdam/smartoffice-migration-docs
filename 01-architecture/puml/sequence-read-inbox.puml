@@ -1,0 +1,51 @@
+@startuml sequence-read-inbox
+!theme plain
+
+title Sequence Diagram: Baca Inbox (Read Folder)
+
+actor "User" as U
+participant "Client" as C
+participant "AppWrite" as AW
+participant "MailController" as MC
+participant "MailService" as MS
+participant "HrServiceClient" as HR
+participant "UserTaskRepository" as UTR
+participant "MailRepository" as MR
+participant "Cache\n(Caffeine)" as Cache
+participant "HR REST API" as HRAPI
+
+U -> C : Open Inbox
+C -> MC : GET /api/v1/mails/folders/1/mails\n?page=0&size=20&sort=createdDate,desc\n{Authorization: Bearer JWT}
+
+MC -> MC : Validate JWT via AppWrite
+MC -> MS : getMailsByFolder(userId, folderId=INBOX, pageable)
+
+MS -> UTR : findByUserIdAndFolderId(userId, INBOX)
+note right
+  SELECT m.*, mc.mcat_code, mc.mcat_name,
+         ut.read_status, mt.mail_type
+  FROM sys_user_task ut
+  JOIN mail m ON m.m_id = ut.tm_id
+  LEFT JOIN mail_category mc ON mc.mcat_id = m.m_category
+  LEFT JOIN mail_type mt ON mt.mail_type_id = m.m_type
+  WHERE ut.user_id = :userId
+  AND ut.folder_id = :folderId
+end note
+
+UTR --> MS : Page<Mail> (20 records)
+
+' No need to call HR API for list view
+' because names are denormalized in mail table
+note over MS
+  **Key Design Decision:**
+  m_created_by_name, m_to_str are
+  denormalized → No HR API call needed
+  for list view. Only call HR API when
+  user needs live data (e.g., current position).
+end note
+
+MS --> MC : Page<MailSummaryResponse>
+MC --> C : 200 OK\n{content: [...], totalElements, totalPages}
+C --> U : Render inbox list
+
+@enduml
