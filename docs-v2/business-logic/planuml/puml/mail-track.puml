@@ -1,7 +1,5 @@
-@startuml mail-track
+@startuml
 !theme plain
-skinparam shadowing false
-skinparam wrapWidth 220
 title trackMail() / track_mail() — Pelacakan Sirkulasi Surat\ndirect/mail.php:286 + mailmodel.php:1174-1217
 
 start

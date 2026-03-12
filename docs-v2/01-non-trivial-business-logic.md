@@ -1,144 +1,184 @@
-# 🔍 Non-Trivial Business Logic - Modul Persuratan
+# 🔍 Non-Trivial Business Logic — Modul Persuratan
 
-## Quick Navigation
+## 📊 Quick Reference
 
-- [1. send() - Pengiriman Surat](#sec-send)
-- [2. generate_code() - Auto Numbering Surat](#sec-generate-code)
-- [3. make_nlevel_threaded() + find_node()](#sec-thread-tree)
-- [4. directArsip() - Direct Archive](#sec-direct-arsip)
-- [5. signMe() + checkSign()](#sec-sign)
-- [6. create_*_notif() - System Notifications](#sec-system-notif)
-- [7. Archive generate_code()](#sec-archive-generate-code)
-- [8. Archive Access Control](#sec-archive-access)
-- [Complexity Summary](#sec-complexity-summary)
+| Function | Complexity | Priority | Pattern | Key Challenge |
+|----------|-----------|----------|---------|----------------|
+| `send()` | 🔴 Very High | Must refactor | Orchestration | 10 side-effects, needs event-driven |
+| `generate_code()` | 🟠 High | Strategy | Strategy Pattern | Multi-tenant/client branching |
+| `create_*_notif()` | 🟠 High | DRY | Template Pattern | 80% code duplication |
+| Archive `generate_code()` | 🟠 High | Strategy | Strategy Pattern | Office + client branching |
+| `directArsip()` | 🟡 Medium | Validation | Chain Pattern | Permission + business rules |
+| Archive Access Control | 🟡 Medium | Security | ACL | Position-based permissions |
+| `make_nlevel_threaded()` | 🟡 Medium | Optimize | CTE / In-Memory | Tree building |
+| `signMe/checkSign` | 🟢 Low | Security | Enhance | Currently just `uniqid` |
 
 ---
 
-<a id="sec-send"></a>
-### 1. 📧 send() — Pengiriman Surat (Paling Kompleks)
+## 1️⃣ 📧 send() — Pengiriman Surat
 
-File: `mailmodel.php:812-1018`
+**File:** `mailmodel.php:812-1018` | **Complexity:** 🔴 Very High
 
-Ini bukan sekadar update status. Ada 10 side-effects dalam satu transaksi:
+Ini bukan sekadar update status—ada 10 side-effects dalam satu transaksi yang perlu di-orchestrate:
+
+<details>
+<summary><strong>Expand: 10-Step Side-Effects</strong></summary>
 
 | Step | Logic | Spring Boot Equivalent |
-|---|---|---|
-| 1 | Validasi recipient, gagal jika belum ada penerima | `@PreCondition` / service validation |
-| 2 | Auto-generate nomor surat via `generate_code()` | `MailCodeGeneratorService` |
-| 3 | Update status ke `MAIL_STATUS_SENT` + set `m_created_date` | JPA update |
-| 4 | Email notification queue: cek `smtp_mail_config`, isi template dari `msg_template`, masukkan ke `smtp_mail_log` | `MailNotificationService` + `@Async` |
-| 5 | Create inbox untuk setiap recipient di `sys_user_task` (`folder=INBOX`, `status=UNREAD`) | Event-driven / batch insert |
-| 6 | Update statistik `mail_category_statistic` dan `mail_org_statistic` (monthly aggregation, upsert) | `MailStatisticService` |
-| 7 | Move sender draft ke sent di `sys_user_task` | JPA update |
-| 8 | Mark parent mail as READ jika ini reply (`m_parent_id != 0`) | JPA update |
-| 9 | Response time tracking: jika reply, hitung `TIMEDIFF` dan insert ke `mail_respontime` | `MailResponseTimeService` |
-| 10 | Trigger SMTP send jika `notif_method == 1` (realtime) | `@Async` SMTP sender |
+|------|-------|------------------------|
+| 1 | Validasi recipient (harus ada penerima) | `@PreCondition` / service validation |
+| 2 | Auto-generate nomor surat | `MailCodeGeneratorService` |
+| 3 | Update status → `SENT` + `m_created_date` | JPA update |
+| 4 | Email notification queue (SMTP config + template) | `MailNotificationService` + `@Async` |
+| 5 | Create inbox per recipient → `sys_user_task` | Event-driven batch insert |
+| 6 | Update monthly statistics | `MailStatisticService` (upsert) |
+| 7 | Move sender draft → sent | JPA update |
+| 8 | Mark parent mail as READ (if reply) | JPA update |
+| 9 | Response time tracking (if reply) | `MailResponseTimeService` |
+| 10 | Trigger SMTP send (realtime) | `@Async` SMTP sender |
 
-> ⚠️ Catatan migrasi: Ini harus di-refactor jadi transactional orchestration dengan `@Transactional` + event listeners untuk decoupling (notif, statistik, response time).
+</details>
+
+**Migration Note:** ⚠️ Refactor to event-driven orchestration using `@Transactional` + event listeners for decoupling (notifications, statistics, response tracking).
 
 ---
 
-<a id="sec-generate-code"></a>
-### 2. 🔢 generate_code() — Auto Numbering Surat
+## 2️⃣ 🔢 generate_code() — Auto Numbering (Mail & Archive)
 
-File: `mailmodel.php:1564-1617`
+### Mail Numbering
+**File:** `mailmodel.php:1564-1617` | **Complexity:** 🟠 High
 
-Logic: Template-based nomor surat dengan multi-tenant client logic:
+Template-based nomor surat dengan multi-client branching:
 
-```text
+```
 Template: #seq#/1421002/#org_code#-#type#/#MR#/#YYYY#-#m_cat#
-Output:   001/1421002/01-I/III/2026-000
+Example:  001/1421002/01-I/III/2026-000
 ```
 
-| Placeholder | Source |
-|---|---|
-| `#org_code#` | User's `mail_code` (dari organization) |
-| `#type#` | `I=Internal`, `M=Memo`, `E/K=Eksternal` (varies per `CLIENT_CODE`) |
-| `#MR#` | Bulan Romawi (helper `get_month_r`) |
-| `#YYYY#` | Tahun |
-| `#m_cat#` | Kode klasifikasi surat |
-| `#seq#` | Auto-increment per prefix via `get_trans_sequence()` |
+| Placeholder | Source | Notes |
+|-------------|--------|-------|
+| `#seq#` | Auto-increment per prefix | Via `get_trans_sequence()` |
+| `#org_code#` | User's organization code | From `mail_code` |
+| `#type#` | Mail type (I/M/E/K) | Varies per `CLIENT_CODE` |
+| `#MR#` | Roman month numeral | Helper `get_month_r()` |
+| `#YYYY#` | Year | Current year |
+| `#m_cat#` | Classification code | Mail category |
 
-> ⚠️ Multi-client branching: `CLIENT_CODE` (`BMS`/`SMD`/`BPN`) punya template dan type mapping berbeda. Perlu di-refactor jadi Strategy Pattern di Spring Boot.
+**Challenge:** `CLIENT_CODE` (BMS/SMD/BPN) punya template & type mapping berbeda  
+**Refactor:** Strategy Pattern untuk client-specific code generation
+
+### Archive Numbering
+**File:** `mailarchivemodel.php` | **Complexity:** 🟠 High
+
+Sama kompleks dengan mail numbering, plus:
+- **Office-based branching:** PUSAT vs cabang → prefix berbeda
+- **Sequence scope:** Per office → `prefix_sequence = office_code + type + year`  
+- **Client variation:** Template berbeda per CLIENT_CODE (BMS/SMD/BPN)
 
 ---
 
-<a id="sec-thread-tree"></a>
-### 3. 🌳 make_nlevel_threaded() + find_node() — Thread Tree Builder
+## 3️⃣ 🌳 make_nlevel_threaded() + find_node() — Thread Tree Builder
 
-File: `direct/mail.php:219-286`
+**File:** `direct/mail.php:219-286` | **Complexity:** 🟡 Medium
 
 Membangun n-level nested tree dari flat mail data untuk ExtJS TreePanel:
 
-- Setiap mail punya `m_root_id` (root thread) dan `m_parent_id` (direct parent)
-- Rekursif `find_node()` mencari parent node dalam tree dan menempel child
-- Fallback: jika parent tidak ditemukan, taruh di level 1 child dari root
-- Fallback 2: jika root juga tidak ditemukan, taruh di top level
+<details>
+<summary><strong>Expand: Tree Building Logic</strong></summary>
 
-> Spring Boot: Bisa pakai recursive CTE query atau tetap in-memory tree building. Cocok untuk `MailThreadService.buildTree()`.
+**Data Structure:**
+- `m_root_id` = root thread identifier
+- `m_parent_id` = direct parent in thread (0 if top-level)
 
+**Algorithm:**
+1. Recursive `find_node()` searches for parent in current tree
+2. Appends child to parent when found
+3. **Fallback 1:** No parent found → insert at level 1 under root
+4. **Fallback 2:** No root found → insert at top level
+
+</details>
+
+**Migration Path:** Keep in-memory tree building OR use recursive CTE query  
+**Service:** `MailThreadService.buildTree()`
 ---
 
-<a id="sec-direct-arsip"></a>
-### 4. 📁 directArsip() — Direct Archive dari Surat
+## 4️⃣ 📁 directArsip() — Direct Archive Workflow
 
-File: `direct/mail.php:364-395`
+**File:** `direct/mail.php:364-395` | **Complexity:** 🟡 Medium
 
-Logic flow:
+Archive surat dengan validation chain:
 
-1. Cek role permission — user harus punya akses menu arsip (sys_role_menu_event)
-2. Cek lampiran — surat HARUS punya attachment, jika tidak → reject
-3. Cek duplikat — cek m_ma_id di root mail, jika sudah diarsip → reject dengan info siapa yang arsip
-4. Copy attachments — dari REF_TYPE_MAIL ke REF_TYPE_MAIL_ARCHIVE dengan temp_id
+<details>
+<summary><strong>Expand: Validation Flow</strong></summary>
 
-> Spring Boot: Ini jadi workflow validation chain. Cocok untuk `ArchiveService` dengan `@PreAuthorize` + custom validators.
+| Step | Validation | Action if Failed |
+|------|------------|------------------|
+| 1 | User has archive menu permission | Reject |
+| 2 | Mail has attachment(s) | Reject |
+| 3 | Mail not already archived | Reject (show who archived) |
+| 4 | Copy attachments | REF_TYPE_MAIL → REF_TYPE_MAIL_ARCHIVE |
 
+</details>
+
+**Refactor:** Validation chain pattern + `@PreAuthorize`  
+**Service:** `ArchiveService` with custom validators
 ---
 
-<a id="sec-sign"></a>
-### 5. ✍️ signMe() + checkSign() — Digital Signature
+## 5️⃣ ✍️ signMe() + checkSign() — Print Verification
 
-File: `direct/mail.php:395-420`
+**File:** `direct/mail.php:395-420` | **Complexity:** 🟢 Low
 
-Logic:
+Currently a "print verification code" (not true digital signature):
 
-- `signMe()`: Generate `uniqid()`, simpan ke `print_log` (`auth_code`, date, `mail_id`, username, IP)
-- `checkSign()`: Lookup `print_log` by `auth_code`, render view `cek_signature.html`
+<details>
+<summary><strong>Expand: Current Implementation</strong></summary>
 
-> Spring Boot: Ini bukan digital signature sebenarnya, lebih ke print verification code. Bisa di-improve dengan JWT/UUID + QR code. Map ke `GET /api/mails/verify-sign/{key}`.
+| Function | Logic |
+|----------|-------|
+| `signMe()` | Generate `uniqid()` → save to `print_log` (auth_code, date, mail_id, username, IP) |
+| `checkSign()` | Lookup `print_log` by auth_code → render verification view |
 
+</details>
+
+**Current Flow:** `GET /api/mails/verify-sign/{key}` (simple lookup)  
+**Enhancement:** Upgrade with JWT/UUID + QR code for better security                 
 ---
 
-<a id="sec-system-notif"></a>
-### 6. 📮 create_*_notif() — System-Generated Mail Notifications (3 variants)
+## 6️⃣ 📮 create_*_notif() — System Mail Notifications
 
-File: `mailmodel.php:337-750`
+**File:** `mailmodel.php:337-750` | **Complexity:** 🟠 High
 
-Tiga jenis notifikasi otomatis yang membuat surat internal (bukan email):
+Four automated notification types generating internal surat (not email):
 
-| Function | Trigger | Recipient |
-|---|---|---|
-| `create_publication_mail_notif` | Publikasi baru dibuat | Semua karyawan aktif |
-| `create_upd_emp_tanggungan_mail_notif` | Data tanggungan berubah | Karyawan terkait |
-| `create_approval_cuti_notif` | Approval cuti | Karyawan terkait |
-| `create_archive_mail_notif` | Arsip baru + hak akses | User yang diberi akses |
+| Function | Trigger | Recipient | File Range |
+|----------|---------|-----------|------------|
+| `create_publication_mail_notif` | Publication created | All active employees | L337-500 |
+| `create_upd_emp_tanggungan_mail_notif` | Tanggungan data changed | Related employees | L500-600 |
+| `create_approval_cuti_notif` | Cuti approval | Related employees | L600-700 |
+| `create_archive_mail_notif` | Archive created + access granted | Granted users | L700-750 |
 
-Semua mengikuti pola yang sama:
+<details>
+<summary><strong>Expand: Common Pattern (80% duplicated)</strong></summary>
 
+All four follow identical structure:
 1. Generate nomor surat (per CLIENT_CODE)
-2. Isi template dari msg_template
-3. Insert ke mail table
-4. Set m_root_id = self (new thread)
-5. Create sys_user_task (sent untuk admin, inbox untuk recipients)
+2. Fill template from `msg_template`
+3. Insert into mail table
+4. Set `m_root_id = self` (new thread)
+5. Create `sys_user_task` entries:
+   - Sent folder for admin
+   - Inbox folder for recipients
 
-> Spring Boot: Extract ke SystemMailService yang dipanggil dari modul lain via Spring Events (@EventListener). Eliminasi duplikasi code.
+</details>
+
+**Problem:** 80% code duplication  
+**Refactor:** Extract to `SystemMailService` + template pattern, called via Spring Events (@EventListener)
 
 ---
 
-<a id="sec-archive-generate-code"></a>
 ### 7. 🗄️ Archive generate_code() — Nomor Arsip (Terpisah dari Nomor Surat)
 
-File: `mailarchivemodel.php` (bottom)
+File: mailarchivemodel.php (bottom)
 
 Sama kompleksnya dengan mail generate_code() tapi dengan:
 - Office-based branching (PUSAT vs cabang → prefix berbeda)
@@ -147,29 +187,59 @@ Sama kompleksnya dengan mail generate_code() tapi dengan:
 
 ---
 
-<a id="sec-archive-access"></a>
-### 8. 🔐 Archive Access Control
+## 7️⃣ 🔐 Archive Access Control
 
-File: `mailarchivemodel.php`
+**File:** `mailarchivemodel.php` | **Complexity:** 🟡 Medium
 
-- `set_access()`: Delete-and-reinsert pattern untuk permission per position
-- `search()`: Join `mail_archive_access` untuk filter berdasarkan `pos_id` user + access flag
-- 3 permission levels: access (read), download, history
-- Archive notification workflow: `set_notif()` -> `get_unnotified()` -> `get_allowed_user()` -> `cek_user_notif()` -> `set_user_notif()`
+Position-based permission management with notification workflow:
 
-> Spring Boot: Map ke `ArchiveAccessService` + `@PreAuthorize` custom. Notification bisa jadi scheduled job (`@Scheduled`).
+<details>
+<summary><strong>Expand: Access Control Flow</strong></summary>
+
+**Permission Management:**
+- `set_access()` → Delete-and-reinsert pattern per position
+- 3 levels: access (read), download, history
+- `search()` → Join `mail_archive_access` to filter by `pos_id` + flags
+
+**Notification Workflow:**
+```
+set_notif() 
+  → get_unnotified() 
+  → get_allowed_user() 
+  → cek_user_notif() 
+  → set_user_notif()
+```
+
+</details>
+
+**Refactor:** `ArchiveAccessService` + Spring Security @PreAuthorize  
+**Notifications:** Scheduled job (`@Scheduled`) for batching
 
 ---
 
-<a id="sec-complexity-summary"></a>
-### 📊 Complexity Summary
-| Function | Complexity | Refactor Priority | Notes |
-|---|---|---|---|
-| `send()` | 🔴 Very High | Must refactor | 10 side-effects, needs event-driven |
-| `generate_code()` (mail) | 🟠 High | Strategy Pattern | Multi-tenant branching |
-| `generate_code()` (archive) | 🟠 High | Strategy Pattern | Office + client branching |
-| `make_nlevel_threaded()` | 🟡 Medium | Keep or use CTE | Tree building logic |
-| `directArsip()` | 🟡 Medium | Validation chain | Permission + business rules |
-| `create_*_notif()` x4 | 🟠 High | DRY via template | 80% duplicated code |
-| `signMe/checkSign` | 🟢 Low | Enhance security | Currently just `uniqid` |
-| Archive access control | 🟡 Medium | Spring Security | Position-based ACL |
+## 8️⃣ Summary & Refactor Roadmap
+
+### Priority 1️⃣ — Critical Refactoring (Weeks 1-2)
+- **`send()`** → Event-driven orchestration with @Transactional + async listeners
+- **`create_*_notif()`** → Extract to `SystemMailService`, eliminate duplication
+
+### Priority 2️⃣ — High Impact (Weeks 3-4)
+- **`generate_code()` (mail & archive)** → Strategy Pattern for multi-client/office branching
+- **Archive Access Control** → Spring Security @PreAuthorize + ACL
+
+### Priority 3️⃣ — Medium Priority (Weeks 5-6)
+- **`directArsip()`** → Validation chain with @PreAuthorize
+- **`make_nlevel_threaded()`** → Test recursive CTE vs in-memory performance
+- **`signMe/checkSign`** → Enhance with JWT/UUID + QR code
+
+---
+
+## Key Patterns to Use
+
+| Pattern | Functions | Benefit |
+|---------|-----------|---------|
+| **Event-Driven** | `send()` | Decouple side-effects, async execution |
+| **Strategy Pattern** | `generate_code()` | Eliminate multi-branch conditionals |
+| **Template Pattern** | `create_*_notif()` | DRY, 80% code reuse |
+| **Validation Chain** | `directArsip()` | Composable, testable rules |
+| **Spring Security ACL** | Archive access | Declarative permission model |

@@ -1,75 +1,39 @@
-@startuml mail-direct-arsip
+@startuml
 !theme plain
-skinparam shadowing false
-skinparam wrapWidth 220
-title directArsip() — Arsip Langsung dari Surat\ndirect/mail.php:364-390
+title directArsip() - Arsip Langsung dari Surat\ndirect/mail.php:364-390
 
 start
 
-== Gate 1: Role Permission Check ==
-
+:Gate 1 Role Permission Check;
 partition "Cek Hak Akses" #LightBlue {
-  :Query sys_role_menu_event
-  WHERE role_id = user.role_id
-  AND menu_id = ID_MENU_ARSIP
-  AND menu_event_id = 1;
-
-  if (user punya akses menu arsip?) then (no)
-    #Pink:Return ERROR:
-    "Anda tidak memiliki hak
-    untuk melakukan pengarsipan surat";
-    stop
-  else (yes)
-  endif
+  :Query role menu event;
 }
+if (Akses menu arsip?) then (no)
+  :Return ERROR: tidak punya hak arsip;
+  stop
+else (yes)
+endif
 
-== Gate 2: Duplicate Check ==
-
+:Gate 2 Duplicate Check;
 partition "Cek Duplikat Arsip" #LightBlue {
-  :Get mail data WHERE m_id = id_mail;
-  :Get root mail WHERE m_id = mail.m_root_id;
-
-  if (root mail sudah punya m_ma_id?\n(sudah di-arsip)) then (yes)
-    :Get arsip data dari mail_archive
-    WHERE ma_id = root.m_ma_id;
-    #Pink:Return ERROR:
-    "Surat ini sudah pernah diarsipkan oleh
-    <b>{arsip.ma_archive_by_name}</b>
-    dengan nomor arsip <b>{arsip.ma_no}</b>";
-    stop
-  else (no, belum di-arsip)
-  endif
+  :Get mail by id_mail;
+  :Get root mail by m_root_id;
 }
+if (Root mail sudah punya m_ma_id?) then (yes)
+  :Return ERROR: surat sudah diarsipkan;
+  stop
+else (no)
+endif
 
-== Gate 3: Attachment Check ==
-
-if (mail.m_attachment_qty > 0?) then (yes)
-
-  partition "Copy Attachments" #LightBlue {
-    :temp_id = get_temp_id(user_id);
-
-    :attachment.copy_attachments(
-    temp_id, id_mail,
-    REF_TYPE_MAIL → REF_TYPE_MAIL_ARCHIVE);
-    note right
-      Copy lampiran dari context surat
-      ke context arsip dengan temp_id baru.
-      Arsip WAJIB punya lampiran.
-    end note
-  }
-
-  :Return SUCCESS:
-  - temp_id (untuk form arsip)
-  - root mail data (m_content stripped);
-
-else (no, tidak ada lampiran)
-  #Pink:Return ERROR:
-  "Surat ini tidak memiliki lampiran.
-  Anda tidak dapat melanjutkan
-  proses pengarsipan.";
+:Gate 3 Attachment Check;
+if (m_attachment_qty > 0?) then (yes)
+  :temp_id = get_temp_id(user_id);
+  :copy_attachments REF_TYPE_MAIL -> REF_TYPE_MAIL_ARCHIVE;
+  :Return SUCCESS with temp_id and root mail data;
+else (no)
+  :Return ERROR: surat tidak memiliki lampiran;
   stop
 endif
 
 stop
-
 @enduml

@@ -1,7 +1,5 @@
-@startuml mail-send
+@startuml
 !theme plain
-skinparam shadowing false
-skinparam wrapWidth 220
 title send() — Pengiriman Surat (10-Step Orchestration)\nmailmodel.php:812-1016
 
 start
@@ -13,7 +11,7 @@ partition "Cek Penerima" #LightBlue {
   COUNT recipient WHERE m_id = tid;
 
   if (recipient == 0?) then (yes)
-    :Return ERROR:\nDaftar penerima belum ada;
+    :Return ERROR:\nDaftar penerima belum ada;<<#Pink>>
     stop
   else (no)
   endif

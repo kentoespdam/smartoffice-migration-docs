@@ -1,7 +1,5 @@
-@startuml archive-generate-code
+@startuml
 !theme plain
-skinparam shadowing false
-skinparam wrapWidth 220
 title generate_code() — Auto Numbering Arsip Surat\nmailarchivemodel.php:435-551
 
 start

@@ -1,29 +1,17 @@
-# 📋 Feature Mapping: CI 2.1.3 (Ext Direct RPC) → Spring Boot REST API
+# Feature Mapping: CI 2.1.3 (Ext Direct RPC) -> Spring Boot REST API
 
 ## Source Files Overview
 
 | CI Layer | Files |
-|---|---|
+| --- | --- |
 | RPC Direct | `mail.php`, `mailarchive.php`, `mailcategory.php`, `mailtype.php`, `mailstatisticreport.php` |
 | Models | `mailmodel.php`, `mailarchivemodel.php`, `mailcategorymodel.php`, `mailtypemodel.php`, `mailstatisticreportmodel.php` |
 | Frontend (ExtJS) | Controllers: `Mail.js`, `MailArchive.js`, `MailCategory.js`, `MailStandard.js`, etc. |
 
-## Quick Navigation
-
-- [1. Mail (Core Module)](#1-mail-surat--core-module)
-- [2. Mail Archive](#2-mail-archive-arsip-surat)
-- [3. Mail Category](#3-mail-category-klasifikasi-surat)
-- [4. Mail Type](#4-mail-type-jenis-surat)
-- [5. Mail Statistic Report](#5-mail-statistic-report)
-- [Proposed Spring Boot Package Structure](#proposed-spring-boot-package-structure)
-- [Summary](#summary)
-
----
-
-### 1️⃣ Mail (Surat) — Core Module
+## 1. Mail (Surat) - Core Module
 
 | # | CI Function (`direct/mail.php`) | Spring Boot REST Endpoint | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | `getFolder()` | `GET /api/mail/folders` | List mail folders |
 | 2 | `saveFolder($data)` | `POST /api/mail/folders` | Create/update folder |
 | 3 | `delFolder($id)` | `DELETE /api/mail/folders/{id}` | Delete folder |
@@ -50,20 +38,17 @@
 | 24 | `signMe($id)` | `POST /api/mails/{id}/sign` | Digital signature |
 | 25 | `checkSign($key)` | `GET /api/mails/verify-sign/{key}` | Verify signature |
 
-## Model (`mailmodel.php`) internal functions also map to
+### Model Mapping (`mailmodel.php`)
 
-- `generate_code()` → Service layer (auto-generate mail number)
-- `send()` → Service layer (send logic with notifications)
-- `create_*_notif()` → Notification service (publication, cuti, tanggungan)
-- `export_xls()` → `GET /api/mails/export?format=xlsx`
+- `generate_code()` -> Service layer (auto-generate mail number)
+- `send()` -> Service layer (send logic with notifications)
+- `create_*_notif()` -> Notification service (publication, cuti, tanggungan)
+- `export_xls()` -> `GET /api/mails/export?format=xlsx`
 
-
-
-
-### 2️⃣ Mail Archive (Arsip Surat)
+## 2. Mail Archive (Arsip Surat)
 
 | # | CI Function (`direct/mailarchive.php`) | Spring Boot REST Endpoint |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `read($params)` | `GET /api/mail-archives` |
 | 2 | `readAccess($params)` | `GET /api/mail-archives/{id}/access` |
 | 3 | `search($params)` | `GET /api/mail-archives/search` |
@@ -72,40 +57,32 @@
 | 6 | `del($id)` | `DELETE /api/mail-archives/{id}` |
 | 7 | `report($params)` | `GET /api/mail-archives/report` |
 
----
-
-### 3️⃣ Mail Category (Klasifikasi Surat)
+## 3. Mail Category (Klasifikasi Surat)
 
 | # | CI Function | Spring Boot REST Endpoint |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `read($input)` | `GET /api/mail-categories` |
 | 2 | `save($data)` | `POST /api/mail-categories` |
 | 3 | `del($id)` | `DELETE /api/mail-categories/{id}` |
 
----
-
-### 4️⃣ Mail Type (Jenis Surat)
+## 4. Mail Type (Jenis Surat)
 
 | # | CI Function | Spring Boot REST Endpoint |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `read($input)` | `GET /api/mail-types` |
 | 2 | `read_tree()` | `GET /api/mail-types/tree` |
 | 3 | `save($data)` | `POST /api/mail-types` |
 | 4 | `del($id)` | `DELETE /api/mail-types/{id}` |
 
----
-
-### 5️⃣ Mail Statistic Report
+## 5. Mail Statistic Report
 
 | # | CI Function | Spring Boot REST Endpoint |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `getStatistic($input)` | `GET /api/reports/mail-statistics` |
 
----
+## Proposed Spring Boot Package Structure
 
-### 🏗️ Proposed Spring Boot Package Structure
-
-```bash
+```text
 com.smartoffice.persuratan
 ├── controller/
 │   ├── MailController.java          (25 endpoints)
@@ -132,15 +109,13 @@ com.smartoffice.persuratan
     ├── MailRequest.java, MailResponse.java, etc.
 ```
 
----
-
-### 📊 Summary
+## Summary
 
 | Module | CI Functions | REST Endpoints | Priority |
-|---|---|---|---|
-| Mail (Core) | ~25 | ~25 | 🔴 High |
-| Mail Archive | 7 | 7 | 🟡 Medium |
-| Mail Category | 3 | 3 | 🟢 Low |
-| Mail Type | 4 | 4 | 🟢 Low |
-| Mail Report | 1+ | 2 | 🟡 Medium |
+| --- | --- | --- | --- |
+| Mail (Core) | ~25 | ~25 | High |
+| Mail Archive | 7 | 7 | Medium |
+| Mail Category | 3 | 3 | Low |
+| Mail Type | 4 | 4 | Low |
+| Mail Report | 1+ | 2 | Medium |
 | Total | ~41 | ~41 | - |

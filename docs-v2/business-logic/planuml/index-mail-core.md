@@ -3,20 +3,6 @@
 > Modul inti persuratan (e-Office Mail).
 > Source: `server/application/direct/mail.php` + `server/application/models/mailmodel.php`
 
-## Daftar Diagram
-
-| # | Diagram | Tipe | Kompleksitas |
-|---|---------|------|--------------|
-| 1 | [send() — Pengiriman Surat](#send--pengiriman-surat) | Activity | Very High |
-| 2 | [generate_code() — Auto Numbering](#generate_code--auto-numbering-surat) | Activity | High |
-| 3 | [readFolder() — Baca per Folder](#readfolder--baca-surat-per-folder) | Activity | High |
-| 4 | [make_nlevel_threaded() — Thread Tree](#make_nlevel_threaded--find_node--thread-tree-builder) | Activity | Medium |
-| 5 | [find() — Pencarian Surat](#find--find_mail--pencarian-surat) | Activity | Medium |
-| 6 | [directArsip() — Arsip Langsung](#directarsip--arsip-langsung-dari-surat) | Activity | Medium |
-| 7 | [signMe() + checkSign() — Verifikasi Cetak](#signme--checksign--verifikasi-cetak-surat) | Activity | Low |
-| 8 | [trackMail() — Pelacakan Sirkulasi](#trackmail--track_mail--pelacakan-sirkulasi-surat) | Activity | Medium |
-| 9 | [Mail Folder Lifecycle](#move--restore--empty_trash--mail-folder-lifecycle) | State | Medium |
-
 ---
 
 ## send() — Pengiriman Surat
@@ -32,11 +18,6 @@ Orchestrasi pengiriman surat dengan 10 side-effects dalam satu transaksi: valida
 Ini adalah fungsi paling kritis di modul persuratan. Satu kali send() mempengaruhi banyak tabel dan external system (SMTP). Semua side-effect harus atomik — jika satu gagal, state data bisa inkonsisten.
 
 ### Diagram
-
-![send() — Pengiriman Surat (10-Step Orchestration)](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-send.puml)
-
-<details>
-<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -239,8 +220,6 @@ stop
 @enduml
 ```
 
-</details>
-
 ### Migration Notes
 - Pecah 10 side-effects menjadi: core transaction (`@Transactional`) + event-driven side effects (`@Async`, `@EventListener`)
 - Email notification → `MailNotificationService` (async)
@@ -263,11 +242,6 @@ Generate nomor surat otomatis berdasarkan template per CLIENT_CODE. Template di-
 Setiap tenant (BMS/SMD/BPN) punya format nomor surat berbeda. Sequence numbering harus unik per kombinasi mail_code + category + tahun.
 
 ### Diagram
-
-![generate_code() — Auto Numbering Surat](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-generate-code.puml)
-
-<details>
-<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -355,8 +329,6 @@ stop
 @enduml
 ```
 
-</details>
-
 ### Migration Notes
 - Implement sebagai Strategy Pattern: `MailCodeGenerator` interface dengan `BmsMailCodeGenerator`, `SmdMailCodeGenerator`, `BpnMailCodeGenerator`
 - ⚠️ Bug di source: blok SMD tidak pakai `else if`, sehingga di-override oleh BPN. Fix di migrasi.
@@ -377,11 +349,6 @@ Query surat berdasarkan folder (inbox/sent/draft/read/deleted/personal) dengan f
 Folder view adalah tampilan utama modul persuratan. Setiap folder punya kebutuhan data berbeda (inbox perlu sirkulasi, deleted perlu restore folder name). Keyword highlighting membantu user menemukan surat yang dicari.
 
 ### Diagram
-
-![readFolder() — Baca Surat per Folder](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-read-folder.puml)
-
-<details>
-<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -506,8 +473,6 @@ stop
 @enduml
 ```
 
-</details>
-
 ### Migration Notes
 - Pecah jadi beberapa query method di Repository layer (findByFolderInbox, findByFolderSent, dll) atau gunakan Specification pattern
 - Keyword highlighting → pindah ke frontend atau gunakan Spring util
@@ -529,11 +494,6 @@ Membangun n-level nested tree dari flat mail data untuk ExtJS TreePanel. Setiap 
 Thread view memungkinkan user melihat percakapan surat (reply chain) sebagai tree. Flat data dari DB perlu dikonversi ke nested structure untuk tree component di frontend.
 
 ### Diagram
-
-![make_nlevel_threaded() — N-Level Thread Tree](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-threading.puml)
-
-<details>
-<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -622,8 +582,6 @@ endlegend
 @enduml
 ```
 
-</details>
-
 ### Migration Notes
 - Bisa tetap in-memory tree building di `MailThreadService.buildTree()`
 - Alternatif: recursive CTE query di database level
@@ -645,11 +603,6 @@ Pencarian surat dengan multi-field keyword (nomor, perihal, isi, catatan, pengir
 Digunakan untuk mencari surat saat membuat arsip atau menghubungkan surat ke RAB. Filter `m_id = m_root_id` memastikan tidak ada duplikat thread.
 
 ### Diagram
-
-![find() — Pencarian Surat](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-search.puml)
-
-<details>
-<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -744,8 +697,6 @@ endlegend
 @enduml
 ```
 
-</details>
-
 ### Migration Notes
 - Tambahkan pagination (saat ini tanpa LIMIT)
 - Pertimbangkan full-text search (Elasticsearch) untuk performance
@@ -766,11 +717,6 @@ Validasi 3-gate sebelum mengarsip surat: (1) cek role permission untuk menu arsi
 Arsip surat memerlukan attachment (sebagai bukti fisik digital). Duplikat arsip dicegah dengan pengecekan m_ma_id di root mail. Role-based access memastikan hanya user berwenang yang bisa arsip.
 
 ### Diagram
-
-![directArsip() — Arsip Langsung dari Surat](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-direct-arsip.puml)
-
-<details>
-<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -837,8 +783,6 @@ stop
 @enduml
 ```
 
-</details>
-
 ### Migration Notes
 - Gate 1: `@PreAuthorize` dengan custom permission check
 - Gate 2-3: validation logic di `ArchiveService`
@@ -859,11 +803,6 @@ signMe(): Generate unique verification code (uniqid) saat user mencetak surat. S
 Memungkinkan verifikasi keaslian dokumen cetak. Pemegang dokumen fisik bisa cek apakah dokumen valid dengan memasukkan kode verifikasi.
 
 ### Diagram
-
-![signMe() + checkSign() — Verifikasi Cetak Surat](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-sign.puml)
-
-<details>
-<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -917,8 +856,6 @@ stop
 @enduml
 ```
 
-</details>
-
 ### Migration Notes
 - Ganti `uniqid()` dengan `UUID.randomUUID()` atau JWT
 - `checkSign()` → `GET /api/mails/verify-sign/{key}` return JSON (bukan HTML)
@@ -939,11 +876,6 @@ Menampilkan seluruh surat dalam satu thread (berdasarkan m_root_id) secara chron
 Tracking memungkinkan user melihat riwayat sirkulasi surat: siapa yang mengirim, kapan dibalas, berapa kali beredar.
 
 ### Diagram
-
-![trackMail() — Pelacakan Sirkulasi Surat](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-track.puml)
-
-<details>
-<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -1030,8 +962,6 @@ stop
 @enduml
 ```
 
-</details>
-
 ### Migration Notes
 - Bisa gunakan recursive CTE untuk mendapat tree + metadata
 - Content trimming → utility method
@@ -1052,11 +982,6 @@ Tiga operasi yang mengubah state folder surat: move() memindahkan ke folder targ
 Lifecycle folder memastikan user bisa mengelola surat (pindah, hapus, restore). Soft delete via folder_id memungkinkan restore. Permanent delete (folder_id=-1) hanya mengubah flag — data tetap di DB untuk audit.
 
 ### Diagram
-
-![Mail Folder Lifecycle — move/restore/empty_trash](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-lifecycle.puml)
-
-<details>
-<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -1159,8 +1084,6 @@ end note
 
 @enduml
 ```
-
-</details>
 
 ### Migration Notes
 - Pertimbangkan enum MailFolder instead of magic numbers

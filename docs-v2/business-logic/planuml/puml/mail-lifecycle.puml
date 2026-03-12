@@ -1,7 +1,5 @@
-@startuml mail-lifecycle
+@startuml
 !theme plain
-skinparam shadowing false
-skinparam wrapWidth 220
 title Mail Folder Lifecycle — move() + restore() + empty_trash()\nmailmodel.php:1018-1029, 1268-1300
 
 [*] --> DRAFT : save() creates draft\n(folder_id=DRAFT)
@@ -39,6 +37,7 @@ state "User Actions" as actions {
     else:
       → folder_id = FOLDER_DELETED
       → simpan restore_folder_id
+    endif
   end note
 }
 

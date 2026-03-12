@@ -1,7 +1,5 @@
-@startuml archive-workflow
+@startuml
 !theme plain
-skinparam shadowing false
-skinparam wrapWidth 220
 title archive() + create() + update() — Archive Workflow\nmailarchivemodel.php:263-399
 
 start
@@ -15,15 +13,13 @@ end note
 
 if (Action?) then (save - baru)
 
-  == create() — mailarchivemodel.php:263-319 ==
-
   partition "Validasi Organisasi" #LightBlue {
     :Query mail_code FROM organization
     WHERE org_id = ma_org_id;
 
     if (organization tidak ditemukan?) then (yes)
       :Return ERROR:
-      "Unit Kerja tidak dikenal";<<#Pink>>
+      "Unit Kerja tidak dikenal";
       stop
     else (no)
     endif
@@ -77,8 +73,6 @@ if (Action?) then (save - baru)
 
 elseif (save - existing) then
 
-  == update() — mailarchivemodel.php:321-374 ==
-
   partition "Load Existing Data" #LightBlue {
     :SELECT * FROM mail_archive
     WHERE ma_id = input.ma_id;
@@ -115,8 +109,6 @@ elseif (save - existing) then
 
 elseif (archive/finalize) then
 
-  == archive() — mailarchivemodel.php:376-383 ==
-
   partition "Finalize" #LightBlue {
     :UPDATE mail_archive SET
     - ma_status = 2 (FINALIZED)
@@ -128,8 +120,6 @@ elseif (archive/finalize) then
   :Return success;
 
 else (delete)
-
-  == delete() — mailarchivemodel.php:385-399 ==
 
   partition "Soft Delete" #LightBlue {
     :SELECT * FROM mail_archive

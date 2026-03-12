@@ -1,153 +1,194 @@
 # Tujuan Migrasi: CI 2.1.3 RPC → Spring Boot REST API
 
-## Quick Navigation
-
-- [Latar Belakang](#latar-belakang)
-- [Tujuan Migrasi](#tujuan-migrasi)
-- [Scope Migrasi Saat Ini](#scope-migrasi-saat-ini)
-- [Sumber Data Kepegawaian](#sumber-data-kepegawaian)
-- [Endpoint API Kepegawaian yang Tersedia](#endpoint-api-kepegawaian-yang-tersedia)
-- [Mapping Penggunaan Data Kepegawaian](#mapping-penggunaan-data-kepegawaian-di-modul-persuratan)
-- [Strategi Integrasi di Spring Boot](#strategi-integrasi-di-spring-boot)
-- [Prinsip Migrasi](#prinsip-migrasi)
-- [Referensi Dokumen Terkait](#referensi-dokumen-terkait)
+> **Modul:** Persuratan (e-Office Mail) &nbsp;|&nbsp; **Stack Lama:** CodeIgniter 2.1.3 + Ext.Direct RPC &nbsp;|&nbsp; **Stack Baru:** Spring Boot REST + JWT
 
 ---
 
-## Latar Belakang
+## Quick Reference
 
-Sistem SmartOffice saat ini menggunakan **CodeIgniter 2.1.3** dengan pola komunikasi **Ext.Direct RPC** — frontend ExtJS memanggil method PHP secara langsung via JSON-RPC. Pola ini tightly-coupled, tidak stateless, dan sulit di-scale atau di-test secara terpisah.
-
----
-
-## Tujuan Migrasi
-
-| Aspek | Sistem Lama (CI + RPC) | Sistem Baru (Spring Boot REST) |
+| | Sistem Lama | Sistem Baru |
 |---|---|---|
-| **Protokol** | Ext.Direct RPC (method-based JSON) | REST API (HTTP verbs + resource-based URL) |
-| **Kontrak API** | Tidak ada kontrak formal, tergantung frontend | OpenAPI / Swagger spec yang eksplisit |
-| **Autentikasi** | Session PHP (`$_SESSION`) | JWT / OAuth2 stateless |
-| **Business Logic** | Fat Model PHP (mailmodel.php ~2000 baris) | Service layer terpisah dengan `@Transactional` |
-| **Notifikasi** | Synchronous dalam satu request | `@Async` / Event-driven (`@EventListener`) |
-| **Testability** | Sulit unit test (tight coupling CI) | Unit + Integration test mudah (Spring Test) |
-| **Data Kepegawaian** | Join langsung ke tabel `employee` di DB lokal | HTTP Client ke API Kepegawaian eksternal |
-| **Scalability** | Single monolith PHP | Modular Spring Boot (bisa microservice) |
+| **Protokol** | Ext.Direct RPC (JSON-RPC) | REST (HTTP verbs + resource URLs) |
+| **Auth** | Session PHP `$_SESSION` | JWT / OAuth2 stateless |
+| **Business Logic** | Fat Model PHP (~2000 baris) | `@Service` + `@Transactional` |
+| **Notifikasi** | Synchronous per-request | `@Async` / `@EventListener` |
+| **Data Pegawai** | SQL JOIN lokal | HTTP → API Kepegawaian (cached) |
+| **Kontrak API** | Tidak formal | OpenAPI / Swagger |
+| **Testing** | Tight coupling, sulit | Unit + Integration test (Spring Test) |
+| **Scalability** | Single PHP monolith | Modular / microservice-ready |
+
+**API Kepegawaian:** `http://192.168.1.214:8080` &nbsp;|&nbsp; Docs: `/v3/api-docs` &nbsp;|&nbsp; Auth: JWT Bearer wajib
 
 ---
 
-## Scope Migrasi Saat Ini
+## 1. Scope Migrasi
 
-**Modul yang dimigrasikan**: Persuratan (e-Office Mail)
+**Modul:** Persuratan (e-Office Mail)
 
-| Sub-modul | CI File (direct/) | CI Model | Spring Boot Target |
+| Sub-modul | CI File | CI Model | Spring Boot Target |
 |---|---|---|---|
-| Surat (Mail) | mail.php | mailmodel.php | `MailController` + `MailService` |
-| Arsip Surat | mailarchive.php | mailarchivemodel.php | `MailArchiveController` + `MailArchiveService` |
-| Kategori Surat | mailcategory.php | mailcategorymodel.php | `MailCategoryController` |
-| Jenis Surat | mailtype.php | mailtypemodel.php | `MailTypeController` |
-| Laporan Statistik | mailstatisticreport.php | — | `MailStatisticController` |
-| Attachment | attachment.php | attachmentmodel.php | `AttachmentController` |
+| Surat | `mail.php` | `mailmodel.php` | `MailController` + `MailService` |
+| Arsip Surat | `mailarchive.php` | `mailarchivemodel.php` | `MailArchiveController` + `MailArchiveService` |
+| Kategori Surat | `mailcategory.php` | `mailcategorymodel.php` | `MailCategoryController` |
+| Jenis Surat | `mailtype.php` | `mailtypemodel.php` | `MailTypeController` |
+| Laporan Statistik | `mailstatisticreport.php` | — | `MailStatisticController` |
+| Attachment | `attachment.php` | `attachmentmodel.php` | `AttachmentController` |
 
 ---
 
-## Sumber Data Kepegawaian
+## 2. Prinsip Migrasi
 
-### ⚠️ Perubahan Penting: Employee Data dari API Eksternal
+1. **Dokumentasi dulu** — jangan tulis ulang logika bisnis tanpa memahaminya
+2. **Backward compatibility** — field denormalized (`emp_name`, `pos_name`) tetap diisi
+3. **Decouple notifikasi** — pisahkan dari transaksi utama via `@Async` / Spring Events
+4. **Multi-tenant** — gunakan Strategy Pattern, jangan hardcode `if (BMS)` / `else if (SMD)`
+5. **Employee data** — selalu dari API terpusat + `@Cacheable`, bukan DB lokal
 
-Pada sistem lama, data kepegawaian diambil via **join SQL langsung** ke tabel `employee`, `emp_profile`, `position`, dan `organization` dalam database yang sama.
+---
 
-Pada sistem baru, **data kepegawaian TIDAK tersimpan di database lokal SmartOffice**. Semua data karyawan, jabatan, dan organisasi diambil dari **API Kepegawaian Terpusat**:
+## 3. Integrasi API Kepegawaian
 
-```text
-Base URL: http://192.168.1.183:8088
-Docs:     http://192.168.1.183:8088/api-docs (OpenAPI 3.0.1)
+> ⚠️ **Breaking change:** Data kepegawaian tidak lagi di-JOIN dari DB lokal. Semua diambil dari API eksternal dengan autentikasi JWT.
+
+### 3.1 Konfigurasi Koneksi
+
+```
+Base URL : http://192.168.1.214:8080
+API Docs : http://192.168.1.214:8080/v3/api-docs  (OpenAPI 3.0.1)
+Auth     : Bearer JWT — wajib di semua endpoint
+Kontak   : Kent-Os (kentoes.pdam@gmail.com)
 ```
 
-### Endpoint API Kepegawaian yang Tersedia
+**Ambil token via:**
+- `GET /auth/session` — session token
+- `GET /auth/csrf-token` — CSRF token
 
-#### Pegawai (`/pegawai`)
-| Endpoint | Method | Fungsi |
-|---|---|---|
-| `/pegawai` | GET | Daftar pegawai (filter: nipam, nama, positionId, orgId, status) |
-| `/pegawai/page` | GET | Daftar pegawai dengan paginasi |
-| `/pegawai/{nipam}/nipam` | GET | Cari pegawai by NIPAM |
-| `/pegawai/{nipams}/in` | GET | Cari banyak pegawai by list NIPAM |
-| `/pegawai/{posId}/position` | GET | Semua pegawai di satu jabatan |
-| `/pegawai/{posParent}/staff` | GET | Staff di bawah satu jabatan parent |
-| `/pegawai/{orgCode}/organization` | GET | Semua pegawai di satu unit kerja |
+<details>
+<summary><strong>Implementasi RestTemplate dengan JWT Interceptor</strong></summary>
 
-**Filter parameter `PegawaiRequest`:**
-```text
-nipam, nama, positionId, positionParent, organizationId,
-flagStatusId, workStatusId, status: [NONE | ACTIVE | INACTIVE | DELETED]
+```java
+@Bean
+public RestTemplate restTemplate(RestTemplateBuilder builder) {
+    return builder
+        .interceptors((request, body, execution) -> {
+            request.getHeaders().set("Authorization", "Bearer " + jwtToken);
+            return execution.execute(request, body);
+        })
+        .build();
+}
 ```
 
-#### Jabatan (`/positions`)
+</details>
+
+### 3.2 Endpoint yang Tersedia
+
+<details>
+<summary><strong>Pegawai <code>/pegawai</code></strong></summary>
+
 | Endpoint | Method | Fungsi |
 |---|---|---|
-| `/positions` | GET | Daftar jabatan (filter: name, code, level, parent, status, orgId) |
-| `/positions/{id}` | GET | Detail jabatan by ID |
-| `/positions/list` | GET | Daftar jabatan (tanpa paginasi) |
-| `/positions/in/{ids}` | GET | Banyak jabatan by list ID |
+| `/pegawai` | `GET` | Daftar pegawai (dengan paginasi) |
+| `/pegawai` | `POST` | Tambah pegawai baru |
+| `/pegawai/list` | `GET` | Daftar pegawai (tanpa paginasi) |
+| `/pegawai/batch` | `POST` | Import batch pegawai |
+| `/pegawai/{id}` | `GET` | Detail pegawai by ID |
+| `/pegawai/{id}/profil` | `GET` | Profil lengkap pegawai |
+| `/pegawai/{id}/ringkasan` | `GET` | Ringkasan pegawai |
+| `/pegawai/{id}/gaji` | `GET` | Data gaji pegawai |
+| `/pegawai/{nipam}/nipam` | `GET` | Cari pegawai by NIPAM |
 
-#### Organisasi / Unit Kerja (`/organization`)
+> ⚠️ Tidak ada filter query param (`positionId`, `orgId`, `status`). Filtering dilakukan **di sisi aplikasi**.
+
+</details>
+
+<details>
+<summary><strong>Jabatan <code>/master/jabatan</code></strong></summary>
+
 | Endpoint | Method | Fungsi |
 |---|---|---|
-| `/organization` | GET | Daftar organisasi (filter: name, code, level, parent, group, category) |
-| `/organization/{id}` | GET | Detail organisasi by ID |
-| `/organization/list` | GET | Daftar organisasi (tanpa paginasi) |
-| `/organization/in/{ids}` | GET | Banyak organisasi by list ID |
+| `/master/jabatan` | `GET` | Daftar jabatan |
+| `/master/jabatan/list` | `GET` | Daftar jabatan (tanpa paginasi) |
+| `/master/jabatan/batch` | `POST` | Import batch jabatan |
+| `/master/jabatan/{id}` | `GET` | Detail jabatan by ID |
+| `/master/jabatan/organisasi/{id}` | `GET` | Jabatan dalam unit kerja tertentu |
 
----
+</details>
 
-### Mapping: Penggunaan Data Kepegawaian di Modul Persuratan
+<details>
+<summary><strong>Unit Kerja / Organisasi</strong></summary>
 
-Berikut adalah titik-titik di mana sistem lama JOIN tabel kepegawaian, dan mapping ke API baru:
+Tidak ada endpoint organisasi terpisah. Data organisasi tersedia di:
+- Field `organisasi` / `unitKerja` dalam response object `pegawai`
+- Endpoint `/master/jabatan/organisasi/{id}` untuk jabatan per unit kerja
 
-| Konteks Penggunaan | Query Lama (SQL Join) | API Baru |
+</details>
+
+### 3.3 Mapping SQL Join → API Call
+
+| Konteks | Query Lama | API Baru |
 |---|---|---|
-| Daftar penerima surat (autocomplete) | `JOIN employee e, emp_profile ep, position p` | `GET /pegawai?nama={keyword}&status=ACTIVE` |
-| Tambah penerima (`addRecipient`) | Resolve emp_id dari form | `GET /pegawai/{nipam}/nipam` untuk validasi |
-| Notifikasi kirim surat (send) | `JOIN employee e, emp_profile ep` untuk email | Cache lokal dari `GET /pegawai/{nipam}/nipam` |
-| Notifikasi arsip (`get_allowed_user`) | `JOIN employee e WHERE emp_pos_id = pos_id` | `GET /pegawai/{posId}/position` |
-| Publikasi mail notif (semua karyawan) | `SELECT * FROM sys_user JOIN employee` | `GET /pegawai?status=ACTIVE` (semua aktif) |
-| Cuti notif, tanggungan notif | `JOIN employee WHERE emp_id = {id}` | `GET /pegawai/{nipam}/nipam` |
-| Tracking surat (pos/org sender) | `JOIN employee ex, position p` | Cache dari sesi login user |
-| Read folder (sender info) | `JOIN sys_user u` (nama disimpan di mail.m_created_by_name) | Tetap dari kolom denormalized |
+| Autocomplete penerima | `JOIN employee, emp_profile, position` | `GET /pegawai` → filter di aplikasi |
+| `addRecipient` | Resolve `emp_id` dari form | `GET /pegawai/{nipam}/nipam` |
+| Notif kirim surat | `JOIN employee, emp_profile` (email) | `GET /pegawai/{id}/profil` |
+| Notif arsip (`get_allowed_user`) | `JOIN employee WHERE emp_pos_id = pos_id` | `GET /master/jabatan/organisasi/{orgId}` |
+| Notif publikasi (semua karyawan) | `SELECT * FROM sys_user JOIN employee` | `GET /pegawai/list` |
+| Notif cuti / tanggungan | `JOIN employee WHERE emp_id = {id}` | `GET /pegawai/{id}` |
+| Tracking surat (sender) | `JOIN employee, position` | Field `position` dari objek pegawai (cached) |
+| Read folder (sender name) | `JOIN sys_user` | Kolom denormalized `m_created_by_name` di tabel `mail` |
 
-### Strategi Integrasi di Spring Boot
+> ⚠️ **Denormalized fields wajib dipertahankan:** `emp_name`, `pos_name` di `mail_recipient` dan `m_created_by_name` di `mail` — jangan diubah ke JOIN agar data historis tetap konsisten.
 
-Alur integrasi yang disarankan:
+### 3.4 Arsitektur Integrasi
 
-1. `MailService`
-2. `KepegawaianClient` (Feign / RestTemplate / WebClient)
-3. External API Kepegawaian (`http://192.168.1.183:8088`)
+```
+MailService
+├── addRecipient()  →  KepegawaianClient.getByNipam()
+└── send()          →  KepegawaianClient.getProfil()
 
-Contoh call yang dipakai:
-
-- `GET /pegawai/{nipam}/nipam`
-- `GET /positions/{id}`
-
-Caching:
-
-- Gunakan `@Cacheable` untuk data pegawai/jabatan yang sering dipakai saat proses `addRecipient()` dan `send()`.
-
-> ⚠️ **Catatan penting**: Field `emp_name`, `pos_name` di tabel `mail_recipient` dan `mail.m_created_by_name` tetap **disimpan secara denormalized** di DB SmartOffice (tidak join saat read) — ini adalah pola existing yang HARUS dipertahankan agar historical data tetap konsisten walaupun data jabatan berubah.
+KepegawaianClient  (@Cacheable, TTL 1–6 jam)
+├── GET /pegawai/{nipam}/nipam
+├── GET /pegawai/{id}/profil
+└── GET /master/jabatan/organisasi/{id}
+```
 
 ---
 
-## Prinsip Migrasi
+## 4. Penyesuaian Desain API (Deviasi dari Rencana Awal)
 
-1. **Tidak menulis ulang logika bisnis secara sembarangan** — dokumentasikan dulu, baru implementasi
-2. **Pertahankan backward compatibility** untuk data lama (field denormalized tetap diisi)
-3. **Decoupling notifikasi** dari transaksi utama via `@Async` / Spring Events
-4. **Multi-tenant (CLIENT_CODE)** via Strategy Pattern — jangan hardcode `if (BMS)`, `else if (SMD)`
-5. **Employee data** dari API terpusat, bukan dari DB lokal — pakai HTTP Client dengan caching
+> ⚠️ API aktual **berbeda** dari yang direncanakan semula.
+
+<details>
+<summary><strong>Lihat detail perbedaan</strong></summary>
+
+| Rencana Awal | Kenyataan API Aktual |
+|---|---|
+| `/pegawai?nama=x&status=ACTIVE` | `/pegawai` — tidak ada filter param |
+| `/pegawai/{posId}/position` | Tidak ada — gunakan `/master/jabatan/organisasi/{id}` |
+| Endpoint `/organization` terpisah | Tidak ada — organisasi hanya di field pegawai |
+
+**Implikasi:**
+- **Filtering & sorting** dilakukan in-memory di Spring Boot
+- **Data organisasi** diambil dari field denormalized di response pegawai
+- **Caching wajib** — `@Cacheable` di `KepegawaianClient` dengan TTL 1–6 jam
+- **Background sync** direkomendasikan untuk pre-load data pegawai
+
+</details>
+
+### Action Items
+
+- [ ] Desain caching strategy (Redis vs Caffeine)
+- [ ] Implementasi `KepegawaianClient` dengan Feign + `@Cacheable`
+- [ ] Background job untuk periodic sync pegawai
+- [ ] Update `MailService.addRecipient()` untuk pakai cached data
+- [ ] Test performa autocomplete dengan dataset besar
 
 ---
 
-## Referensi Dokumen Terkait
+## Referensi
 
-- [00-feature-mapping.md](00-feature-mapping.md) — Peta fungsi RPC ke REST endpoint
-- [01-non-trivial-business-logic.md](01-non-trivial-business-logic.md) — Analisis logika bisnis kompleks
-- [business-logic/](business-logic/) — Flowchart logika per fungsi per modul
+| Dokumen | Deskripsi |
+|---|---|
+| [00-feature-mapping.md](00-feature-mapping.md) | Peta fungsi RPC → REST endpoint |
+| [01-non-trivial-business-logic.md](01-non-trivial-business-logic.md) | Analisis logika bisnis kompleks |
+| [business-logic/](business-logic/) | Flowchart logika per fungsi per modul |
+| [API Docs Live](http://192.168.1.214:8080/v3/api-docs) | OpenAPI 3.0.1 — Kepegawaian API |

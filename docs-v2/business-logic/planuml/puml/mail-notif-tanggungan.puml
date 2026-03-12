@@ -1,7 +1,5 @@
-@startuml mail-notif-tanggungan
+@startuml
 !theme plain
-skinparam shadowing false
-skinparam wrapWidth 220
 title create_upd_emp_tanggungan_mail_notif() — Notifikasi Perubahan Tanggungan\nmailmodel.php:444-570
 
 participant "Caller\n(Kepegawaian Module)" as Caller
