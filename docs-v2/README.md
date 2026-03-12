@@ -12,6 +12,7 @@
 | [00 — Feature Mapping](00-feature-mapping.md) | Pemetaan fungsi CI → Spring Boot REST endpoint |
 | [01 — Non-Trivial Business Logic](01-non-trivial-business-logic.md) | Daftar logika bisnis kompleks yang butuh perhatian khusus |
 | [02 — Migration Goals](02-migration-goals.md) | Tujuan, prinsip, dan scope migrasi |
+| [03 — API Improvement Recommendations](03-api-improvement-recommendations.md) | Rekomendasi perbaikan desain API selama migrasi |
 
 ---
 
