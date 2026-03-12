@@ -1,5 +1,7 @@
-@startuml
+@startuml mail-notif-publication
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title create_publication_mail_notif() — Notifikasi Publikasi Baru\nmailmodel.php:337-442
 
 participant "Caller\n(Publication Module)" as Caller

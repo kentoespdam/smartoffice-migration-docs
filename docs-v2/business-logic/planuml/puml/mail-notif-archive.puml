@@ -1,5 +1,7 @@
-@startuml
+@startuml mail-notif-archive
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title create_archive_mail_notif() — Notifikasi Hak Akses Arsip\nmailmodel.php:1617-1711
 
 participant "Caller\n(Archive Module)" as Caller

@@ -1,5 +1,7 @@
-@startuml
+@startuml mail-notif-cuti
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title create_approval_cuti_notif() — Notifikasi Approval Cuti\nmailmodel.php:572-675
 
 participant "Caller\n(Cuti Module)" as Caller

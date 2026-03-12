@@ -1,5 +1,7 @@
-@startuml
+@startuml archive-access-control
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title Archive Access Control — Permission & Notification Workflow\nmailarchivemodel.php:401-590
 
 participant "Controller\n(mailarchive.php)" as Ctrl

@@ -1,5 +1,7 @@
-@startuml
+@startuml archive-workflow
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title archive() + create() + update() — Archive Workflow\nmailarchivemodel.php:263-399
 
 start

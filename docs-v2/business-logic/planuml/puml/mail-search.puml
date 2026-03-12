@@ -1,5 +1,7 @@
-@startuml
+@startuml mail-search
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title find() / find_mail() — Pencarian Surat\ndirect/mail.php:294 + mailmodel.php:1219-1266
 
 start

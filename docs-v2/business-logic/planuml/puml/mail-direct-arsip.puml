@@ -1,5 +1,7 @@
-@startuml
+@startuml mail-direct-arsip
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title directArsip() — Arsip Langsung dari Surat\ndirect/mail.php:364-390
 
 start

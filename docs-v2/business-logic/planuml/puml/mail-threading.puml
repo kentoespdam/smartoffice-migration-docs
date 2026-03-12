@@ -1,5 +1,7 @@
-@startuml
+@startuml mail-threading
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title make_nlevel_threaded() + find_node() — N-Level Thread Tree Builder\ndirect/mail.php:219-281
 
 start

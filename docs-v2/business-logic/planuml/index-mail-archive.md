@@ -3,6 +3,14 @@
 > Modul arsip surat digital.
 > Source: `server/application/direct/mailarchive.php` + `server/application/models/mailarchivemodel.php`
 
+## Daftar Diagram
+
+| # | Diagram | Tipe | Kompleksitas |
+|---|---------|------|--------------|
+| 1 | [Archive Workflow (create/update/finalize/delete)](#archive--create--update--archive-workflow) | Activity | High |
+| 2 | [Auto Numbering Arsip](#generate_code--auto-numbering-arsip) | Activity | High |
+| 3 | [Access Control & Notification](#archive-access-control--permission--notification) | Sequence | Medium |
+
 ---
 
 ## archive() + create() + update() — Archive Workflow
@@ -18,6 +26,11 @@ Workflow arsip surat dengan 4 entry points: create (arsip baru dengan auto-numbe
 Arsip surat adalah proses yang melibatkan nomor arsip unik, referensi ke surat asli (m_ma_id), dan lokasi fisik penyimpanan. Referensi surat harus dikelola (book/release) agar satu surat hanya bisa di-arsip sekali.
 
 ### Diagram
+
+![Archive Workflow (create/update/finalize/delete)](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/archive-workflow.puml)
+
+<details>
+<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -178,7 +191,10 @@ endif
 stop
 
 @enduml
+
 ```
+
+</details>
 
 ### Migration Notes
 - Pisahkan menjadi method terpisah di `MailArchiveService`: create(), update(), finalize(), softDelete()
@@ -200,6 +216,11 @@ Generate nomor arsip per CLIENT_CODE dengan office-based branching. BMS dan SMD 
 Nomor arsip harus unik per kantor dan per tahun. Cabang punya sequence terpisah agar numbering independen.
 
 ### Diagram
+
+![Auto Numbering Arsip](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/archive-generate-code.puml)
+
+<details>
+<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -314,7 +335,10 @@ endif
 stop
 
 @enduml
+
 ```
+
+</details>
 
 ### Migration Notes
 - Strategy Pattern: `ArchiveCodeGenerator` per CLIENT_CODE
@@ -336,6 +360,11 @@ Position-based access control: set_access() delete-and-reinsert permissions per 
 Arsip bersifat rahasia — akses berdasarkan jabatan (position), bukan individual. Notifikasi otomatis memastikan user yang diberi akses tahu ada arsip baru.
 
 ### Diagram
+
+![Archive Access Control & Notification Workflow](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/archive-access-control.puml)
+
+<details>
+<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -443,7 +472,10 @@ Model -> DB : SELECT ... FROM mail_archive ma\nJOIN mail_archive_access maa\nON 
 DB --> Model : filtered archives
 
 @enduml
+
 ```
+
+</details>
 
 ### Migration Notes
 - set_access(): gunakan `@Transactional` + bulk insert (bukan delete-reinsert)

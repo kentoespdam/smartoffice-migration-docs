@@ -1,5 +1,19 @@
 # Tujuan Migrasi: CI 2.1.3 RPC → Spring Boot REST API
 
+## Quick Navigation
+
+- [Latar Belakang](#latar-belakang)
+- [Tujuan Migrasi](#tujuan-migrasi)
+- [Scope Migrasi Saat Ini](#scope-migrasi-saat-ini)
+- [Sumber Data Kepegawaian](#sumber-data-kepegawaian)
+- [Endpoint API Kepegawaian yang Tersedia](#endpoint-api-kepegawaian-yang-tersedia)
+- [Mapping Penggunaan Data Kepegawaian](#mapping-penggunaan-data-kepegawaian-di-modul-persuratan)
+- [Strategi Integrasi di Spring Boot](#strategi-integrasi-di-spring-boot)
+- [Prinsip Migrasi](#prinsip-migrasi)
+- [Referensi Dokumen Terkait](#referensi-dokumen-terkait)
+
+---
+
 ## Latar Belakang
 
 Sistem SmartOffice saat ini menggunakan **CodeIgniter 2.1.3** dengan pola komunikasi **Ext.Direct RPC** — frontend ExtJS memanggil method PHP secara langsung via JSON-RPC. Pola ini tightly-coupled, tidak stateless, dan sulit di-scale atau di-test secara terpisah.
@@ -44,7 +58,7 @@ Pada sistem lama, data kepegawaian diambil via **join SQL langsung** ke tabel `e
 
 Pada sistem baru, **data kepegawaian TIDAK tersimpan di database lokal SmartOffice**. Semua data karyawan, jabatan, dan organisasi diambil dari **API Kepegawaian Terpusat**:
 
-```
+```text
 Base URL: http://192.168.1.183:8088
 Docs:     http://192.168.1.183:8088/api-docs (OpenAPI 3.0.1)
 ```
@@ -63,7 +77,7 @@ Docs:     http://192.168.1.183:8088/api-docs (OpenAPI 3.0.1)
 | `/pegawai/{orgCode}/organization` | GET | Semua pegawai di satu unit kerja |
 
 **Filter parameter `PegawaiRequest`:**
-```
+```text
 nipam, nama, positionId, positionParent, organizationId,
 flagStatusId, workStatusId, status: [NONE | ACTIVE | INACTIVE | DELETED]
 ```
@@ -103,20 +117,20 @@ Berikut adalah titik-titik di mana sistem lama JOIN tabel kepegawaian, dan mappi
 
 ### Strategi Integrasi di Spring Boot
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                   Spring Boot Service                    │
-│                                                          │
-│  MailService                                             │
-│    └── saat addRecipient() → panggil KepegawaianClient  │
-│    └── saat send()        → resolve email dari API       │
-│                                                          │
-│  KepegawaianClient (Feign / RestTemplate / WebClient)   │
-│    └── GET http://192.168.1.183:8088/pegawai/{nipam}/nipam │
-│    └── GET http://192.168.1.183:8088/positions/{id}      │
-│    └── Hasil di-cache (@Cacheable) untuk performance     │
-└─────────────────────────────────────────────────────────┘
-```
+Alur integrasi yang disarankan:
+
+1. `MailService`
+2. `KepegawaianClient` (Feign / RestTemplate / WebClient)
+3. External API Kepegawaian (`http://192.168.1.183:8088`)
+
+Contoh call yang dipakai:
+
+- `GET /pegawai/{nipam}/nipam`
+- `GET /positions/{id}`
+
+Caching:
+
+- Gunakan `@Cacheable` untuk data pegawai/jabatan yang sering dipakai saat proses `addRecipient()` dan `send()`.
 
 > ⚠️ **Catatan penting**: Field `emp_name`, `pos_name` di tabel `mail_recipient` dan `mail.m_created_by_name` tetap **disimpan secara denormalized** di DB SmartOffice (tidak join saat read) — ini adalah pola existing yang HARUS dipertahankan agar historical data tetap konsisten walaupun data jabatan berubah.
 

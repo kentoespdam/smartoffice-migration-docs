@@ -1,5 +1,7 @@
-@startuml
+@startuml mail-generate-code
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title generate_code() — Auto Numbering Surat\nmailmodel.php:1564-1615
 
 start

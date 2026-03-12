@@ -1,5 +1,7 @@
-@startuml
+@startuml mail-read-folder
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title readFolder() — Baca Surat per Folder\ndirect/mail.php:49-69 + mailmodel.php:83-201
 
 start

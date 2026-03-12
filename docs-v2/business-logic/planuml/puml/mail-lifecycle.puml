@@ -1,5 +1,7 @@
-@startuml
+@startuml mail-lifecycle
 !theme plain
+skinparam shadowing false
+skinparam wrapWidth 220
 title Mail Folder Lifecycle — move() + restore() + empty_trash()\nmailmodel.php:1018-1029, 1268-1300
 
 [*] --> DRAFT : save() creates draft\n(folder_id=DRAFT)

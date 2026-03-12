@@ -52,6 +52,15 @@
 - Native query atau `@Query` JPQL dengan GROUP BY.
 - Data source: `mail_category_statistic` dan `mail_org_statistic` (di-maintain oleh send()).
 
+## Daftar Diagram
+
+| # | Diagram | Tipe | Kompleksitas |
+|---|---------|------|--------------|
+| 1 | [Notifikasi Publikasi](#create_publication_mail_notif--notifikasi-publikasi) | Sequence | High |
+| 2 | [Notifikasi Tanggungan](#create_upd_emp_tanggungan_mail_notif--notifikasi-tanggungan) | Sequence | Medium |
+| 3 | [Notifikasi Cuti](#create_approval_cuti_notif--notifikasi-cuti) | Sequence | Medium |
+| 4 | [Notifikasi Arsip](#create_archive_mail_notif--notifikasi-arsip) | Sequence | Medium |
+
 ---
 
 ## System Notification Diagrams
@@ -69,6 +78,11 @@ Membuat surat notifikasi internal saat ada publikasi baru. Dikirim ke SEMUA kary
 Publikasi (pengumuman perusahaan) harus sampai ke semua karyawan. Sistem otomatis membuat surat internal agar muncul di inbox setiap user.
 
 ### Diagram
+
+![create_publication_mail_notif() — Notifikasi Publikasi](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-notif-publication.puml)
+
+<details>
+<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -149,6 +163,8 @@ end
 @enduml
 ```
 
+</details>
+
 ### Migration Notes
 - Broadcast ke semua user → potentially slow. Gunakan `@Async` + batch insert.
 - Employee list → Kepegawaian API: `GET /pegawai?status=ACTIVE`
@@ -169,6 +185,11 @@ Notifikasi ke karyawan saat data tanggungan berubah (anak lepas tanggungan karen
 Perubahan tanggungan mempengaruhi tunjangan. Karyawan perlu tahu agar bisa verifikasi.
 
 ### Diagram
+
+![create_upd_emp_tanggungan_mail_notif() — Notifikasi Tanggungan](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-notif-tanggungan.puml)
+
+<details>
+<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -242,6 +263,8 @@ end
 @enduml
 ```
 
+</details>
+
 ### Migration Notes
 - Detail HTML building → Thymeleaf template atau utility method
 - Trigger dari modul Kepegawaian via Spring Event
@@ -261,6 +284,11 @@ Notifikasi approval/rejection cuti ke karyawan. Subject dan template ID di-pass 
 Karyawan perlu notifikasi saat pengajuan cuti di-approve atau di-reject.
 
 ### Diagram
+
+![create_approval_cuti_notif() — Notifikasi Cuti](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-notif-cuti.puml)
+
+<details>
+<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -332,6 +360,8 @@ end
 @enduml
 ```
 
+</details>
+
 ### Migration Notes
 - Caller passing subject + template → generic notification pattern
 - Bisa di-generalize menjadi method dengan template + context params
@@ -351,6 +381,11 @@ Notifikasi ke user yang diberi hak akses arsip baru. Template(3) dengan placehol
 User yang diberi akses arsip perlu tahu agar bisa mengakses dokumen.
 
 ### Diagram
+
+![create_archive_mail_notif() — Notifikasi Arsip](https://www.plantuml.com/plantuml/svg/proxy?cache=no&src=https://raw.githubusercontent.com/kentoespdam/smartoffice-migration-docs/main/docs-v2/business-logic/planuml/puml/mail-notif-archive.puml)
+
+<details>
+<summary>📄 Lihat PlantUML source</summary>
 
 ```plantuml
 @startuml
@@ -427,6 +462,8 @@ Model -> DB : INSERT sys_user_task\n(user_id, folder_id=INBOX,\nread_status=UNRE
 
 @enduml
 ```
+
+</details>
 
 ### Migration Notes
 - Dipanggil oleh scheduled notification job (bukan realtime)
