@@ -22,8 +22,8 @@ if (Action?) then (save - baru)
     WHERE org_id = ma_org_id;
 
     if (organization tidak ditemukan?) then (yes)
-      #Pink:Return ERROR:
-      "Unit Kerja tidak dikenal";
+      :Return ERROR:
+      "Unit Kerja tidak dikenal";<<#Pink>>
       stop
     else (no)
     endif
