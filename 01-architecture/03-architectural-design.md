@@ -11,7 +11,7 @@
 ## 3.2 Package Structure
 
 ```
-id.co.smartoffice.mail/
+id.perumdamts.mail/
 ├── config/                     # Spring configuration
 │   ├── SecurityConfig          # AppWrite JWT validation
 │   ├── WebClientConfig         # HR API WebClient bean
